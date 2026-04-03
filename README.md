@@ -35,6 +35,33 @@ That is it. The script will:
 
 ---
 
+## Docker
+
+Run with Docker Compose (recommended):
+
+```bash
+docker compose up -d
+```
+
+Or build and run manually:
+
+```bash
+docker build -t hermes-webui .
+docker run -d -p 8787:8787 -v ~/.hermes:/root/.hermes:ro hermes-webui
+```
+
+Open http://localhost:8787 in your browser.
+
+To enable password protection:
+
+```bash
+docker run -d -p 8787:8787 -e HERMES_WEBUI_PASSWORD=your-secret -v ~/.hermes:/root/.hermes:ro hermes-webui
+```
+
+Session data persists in a named volume (`hermes-data`) across restarts.
+
+---
+
 ## What start.sh discovers automatically
 
 | Thing | How it finds it |

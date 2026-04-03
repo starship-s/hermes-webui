@@ -8,6 +8,43 @@ async function cancelStream(){
   }catch(e){setStatus('Cancel failed: '+e.message);}
 }
 
+// ── Mobile navigation ──────────────────────────────────────────────────────
+function toggleMobileSidebar(){
+  const sidebar=document.querySelector('.sidebar');
+  const overlay=$('mobileOverlay');
+  if(!sidebar)return;
+  const isOpen=sidebar.classList.contains('mobile-open');
+  if(isOpen){closeMobileSidebar();}
+  else{sidebar.classList.add('mobile-open');if(overlay)overlay.classList.add('visible');}
+}
+function closeMobileSidebar(){
+  const sidebar=document.querySelector('.sidebar');
+  const overlay=$('mobileOverlay');
+  if(sidebar)sidebar.classList.remove('mobile-open');
+  if(overlay)overlay.classList.remove('visible');
+}
+function toggleMobileFiles(){
+  const panel=document.querySelector('.rightpanel');
+  if(!panel)return;
+  panel.classList.toggle('mobile-open');
+}
+function mobileSwitchPanel(name){
+  // Close sidebar if open, then switch panel
+  closeMobileSidebar();
+  // Open sidebar for the selected panel, then close after a moment
+  const sidebar=document.querySelector('.sidebar');
+  const overlay=$('mobileOverlay');
+  if(sidebar){
+    sidebar.classList.add('mobile-open');
+    if(overlay)overlay.classList.add('visible');
+  }
+  switchPanel(name);
+  // Update bottom nav active state
+  document.querySelectorAll('.mobile-nav-btn').forEach(btn=>{
+    btn.classList.toggle('active',btn.dataset.panel===name);
+  });
+}
+
 $('btnSend').onclick=()=>{if(window._micActive)_stopMic();send();};
 $('btnAttach').onclick=()=>$('fileInput').click();
 
