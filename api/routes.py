@@ -181,7 +181,7 @@ from api.workspace import (
     read_file_content,
     safe_resolve_ws,
 )
-from api.upload import handle_upload
+from api.upload import handle_upload, handle_transcribe
 from api.streaming import _sse, _run_agent_streaming, cancel_stream
 from api.onboarding import (
     apply_onboarding_setup,
@@ -630,6 +630,9 @@ def handle_post(handler, parsed) -> bool:
     if parsed.path == "/api/upload":
         return handle_upload(handler)
 
+    if parsed.path == "/api/transcribe":
+        return handle_transcribe(handler)
+
     body = read_body(handler)
 
     if parsed.path == "/api/session/new":
@@ -845,8 +848,10 @@ def handle_post(handler, parsed) -> bool:
         if not name:
             return bad(handler, "name is required")
         try:
-            from api.profiles import switch_profile
+            from api.profiles import switch_profile, _validate_profile_name
 
+            if name != 'default':
+                _validate_profile_name(name)
             result = switch_profile(name)
             return j(handler, result)
         except (ValueError, FileNotFoundError) as e:
@@ -893,8 +898,9 @@ def handle_post(handler, parsed) -> bool:
         if not name:
             return bad(handler, "name is required")
         try:
-            from api.profiles import delete_profile_api
+            from api.profiles import delete_profile_api, _validate_profile_name
 
+            _validate_profile_name(name)
             result = delete_profile_api(name)
             return j(handler, result)
         except (ValueError, FileNotFoundError) as e:
@@ -2209,18 +2215,30 @@ def _handle_session_import_cli(handler, body):
     title = title_from(msgs, "CLI Session")
     model = "unknown"
 
-    # Get profile and model from CLI session metadata
+    # Get profile, model, and timestamps from CLI session metadata
     profile = None
+    created_at = None
+    updated_at = None
     for cs in get_cli_sessions():
         if cs["session_id"] == sid:
             profile = cs.get("profile")
             model = cs.get("model", "unknown")
+            created_at = cs.get("created_at")
+            updated_at = cs.get("updated_at")
             break
 
-    s = import_cli_session(sid, title, msgs, model, profile=profile)
+    s = import_cli_session(
+        sid,
+        title,
+        msgs,
+        model,
+        profile=profile,
+        created_at=created_at,
+        updated_at=updated_at,
+    )
     s.is_cli_session = True
     s._cli_origin = sid
-    s.save()
+    s.save(touch_updated_at=False)
     return j(
         handler,
         {
