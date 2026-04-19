@@ -198,7 +198,7 @@ def reload_config() -> None:
             import yaml as _yaml
 
             if config_path.exists():
-                loaded = _yaml.safe_load(config_path.read_text())
+                loaded = _yaml.safe_load(config_path.read_text(encoding="utf-8"))
                 if isinstance(loaded, dict):
                     _cfg_cache.update(loaded)
                     try:
@@ -770,7 +770,7 @@ def get_available_models() -> dict:
             try:
                 import json as _j
 
-                auth_store = _j.loads(auth_store_path.read_text())
+                auth_store = _j.loads(auth_store_path.read_text(encoding="utf-8"))
                 active_provider = auth_store.get("active_provider")
             except Exception:
                 logger.debug("Failed to load auth store from %s", auth_store_path)
@@ -818,7 +818,7 @@ def get_available_models() -> dict:
         env_keys = {}
         if hermes_env_path.exists():
             try:
-                for line in hermes_env_path.read_text().splitlines():
+                for line in hermes_env_path.read_text(encoding="utf-8").splitlines():
                     line = line.strip()
                     if line and not line.startswith("#") and "=" in line:
                         k, v = line.split("=", 1)

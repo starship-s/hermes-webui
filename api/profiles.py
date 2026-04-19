@@ -75,7 +75,7 @@ def _read_active_profile_file() -> str:
     ap_file = _DEFAULT_HERMES_HOME / 'active_profile'
     if ap_file.exists():
         try:
-            name = ap_file.read_text().strip()
+            name = ap_file.read_text(encoding="utf-8").strip()
             if name:
                 return name
         except Exception:
@@ -142,7 +142,7 @@ def _reload_dotenv(home: Path):
         return
     try:
         loaded_keys: set[str] = set()
-        for line in env_path.read_text().splitlines():
+        for line in env_path.read_text(encoding="utf-8").splitlines():
             line = line.strip()
             if line and not line.startswith('#') and '=' in line:
                 k, v = line.split('=', 1)
@@ -344,7 +344,7 @@ def _write_endpoint_to_config(profile_dir: Path, base_url: str = None, api_key: 
     cfg = {}
     if config_path.exists():
         try:
-            loaded = _yaml.safe_load(config_path.read_text())
+            loaded = _yaml.safe_load(config_path.read_text(encoding="utf-8"))
             if isinstance(loaded, dict):
                 cfg = loaded
         except Exception:
