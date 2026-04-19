@@ -57,7 +57,8 @@ services:
       - HERMES_WEBUI_STATE_DIR=/home/hermeswebui/.hermes/webui
       # Match your host user's UID/GID for correct file permissions.
       # In two-container setups the WebUI auto-detects UID/GID from the shared
-      # hermes-home volume, but you can override explicitly if needed (#668):\n      # Run `id -u` and `id -g` to find your values.
+      # hermes-home volume, but you can override explicitly if needed (#668):
+      # Run `id -u` and `id -g` to find your values.
       # On macOS, UIDs start at 501 — set these in a .env file:
       #   echo "UID=$(id -u)" >> .env && echo "GID=$(id -g)" >> .env
       - WANTED_UID=${UID:-1000}
