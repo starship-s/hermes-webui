@@ -45,7 +45,7 @@ def _write_session_index(updates=None):
             entries.sort(key=lambda s: s['updated_at'], reverse=True)
             _tmp = SESSION_INDEX_FILE.with_suffix('.tmp')
             _tmp.write_text(json.dumps(entries, ensure_ascii=False, indent=2), encoding='utf-8')
-            os.replace(str(_tmp), str(SESSION_INDEX_FILE))
+            os.replace(_tmp, SESSION_INDEX_FILE)
         return
 
     # Fast path: patch existing index with updated sessions.
@@ -71,7 +71,7 @@ def _write_session_index(updates=None):
             existing.sort(key=lambda s: s.get('updated_at', 0), reverse=True)
             _tmp = SESSION_INDEX_FILE.with_suffix('.tmp')
             _tmp.write_text(json.dumps(existing, ensure_ascii=False, indent=2), encoding='utf-8')
-            os.replace(str(_tmp), str(SESSION_INDEX_FILE))
+            os.replace(_tmp, SESSION_INDEX_FILE)
     except Exception:
         _fallback = True
     if _fallback:

@@ -16,8 +16,8 @@ import api.config as config
 
 def _reset_cache():
     """Reset TTL cache globals to a clean state."""
-    config._AVAILABLE_MODELS_CACHE = None
-    config._AVAILABLE_MODELS_CACHE_TS = 0.0
+    config._available_models_cache = None
+    config._available_models_cache_ts = 0.0
 
 
 # ── 1. test_cache_hit_within_ttl ──────────────────────────────────────────
@@ -91,10 +91,10 @@ def test_ttl_expiry():
 
     # First call populates cache
     result1 = config.get_available_models()
-    assert config._AVAILABLE_MODELS_CACHE is not None, "Cache should be populated"
+    assert config._available_models_cache is not None, "Cache should be populated"
 
     # Record the cache timestamp
-    cache_ts = config._AVAILABLE_MODELS_CACHE_TS
+    cache_ts = config._available_models_cache_ts
 
     # Advance time.monotonic() by more than the TTL
     original_monotonic = time.monotonic
@@ -104,7 +104,7 @@ def test_ttl_expiry():
         result2 = config.get_available_models()
 
     # The cache should have been refreshed — the timestamp must be newer
-    assert config._AVAILABLE_MODELS_CACHE_TS > cache_ts, (
+    assert config._available_models_cache_ts > cache_ts, (
         "Cache should have been refreshed after TTL expiry"
     )
 
@@ -128,20 +128,20 @@ def test_mtime_invalidation():
 
     # First call populates cache
     result1 = config.get_available_models()
-    assert config._AVAILABLE_MODELS_CACHE is not None
+    assert config._available_models_cache is not None
 
     # Simulate config.yaml changed on disk by setting _cfg_mtime to 0
     # (which won't match the actual file mtime)
     config._cfg_mtime = 0.0
 
     # The next call should detect mtime mismatch, reload, and invalidate cache
-    old_cache = config._AVAILABLE_MODELS_CACHE
-    old_ts = config._AVAILABLE_MODELS_CACHE_TS
+    old_cache = config._available_models_cache
+    old_ts = config._available_models_cache_ts
 
     result2 = config.get_available_models()
 
     # Cache must have been refreshed (new cache object and timestamp)
-    assert config._AVAILABLE_MODELS_CACHE_TS > old_ts or config._AVAILABLE_MODELS_CACHE is not old_cache, (
+    assert config._available_models_cache_ts > old_ts or config._available_models_cache is not old_cache, (
         "Cache should be invalidated when _cfg_mtime doesn't match file mtime"
     )
 
@@ -209,21 +209,21 @@ def test_invalidate_models_cache_direct():
 
     # First call populates cache
     result1 = config.get_available_models()
-    assert config._AVAILABLE_MODELS_CACHE is not None, "Cache should be populated"
-    first_ts = config._AVAILABLE_MODELS_CACHE_TS
+    assert config._available_models_cache is not None, "Cache should be populated"
+    first_ts = config._available_models_cache_ts
 
     # Directly invalidate
     config.invalidate_models_cache()
 
     # Cache must be cleared
-    assert config._AVAILABLE_MODELS_CACHE is None, (
+    assert config._available_models_cache is None, (
         "invalidate_models_cache() should set _AVAILABLE_MODELS_CACHE to None"
     )
 
     # Next call should re-scan and produce a fresh cache
     result2 = config.get_available_models()
-    assert config._AVAILABLE_MODELS_CACHE is not None, "Cache should be re-populated"
-    assert config._AVAILABLE_MODELS_CACHE_TS >= first_ts, (
+    assert config._available_models_cache is not None, "Cache should be re-populated"
+    assert config._available_models_cache_ts >= first_ts, (
         "Cache timestamp should be updated after re-scan"
     )
 
