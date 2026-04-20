@@ -105,6 +105,7 @@ def test_minimax_detected_from_os_environ(monkeypatch):
     old_cfg = dict(config.cfg)
     # Clear model config so the env-var fallback path is exercised
     config.cfg['model'] = {}
+    config.invalidate_models_cache()
     try:
         result = config.get_available_models()
         provider_names = [g['provider'] for g in result['groups']]
@@ -115,6 +116,7 @@ def test_minimax_detected_from_os_environ(monkeypatch):
     finally:
         config.cfg.clear()
         config.cfg.update(old_cfg)
+        config.invalidate_models_cache()
 
 
 # ── Model routing ─────────────────────────────────────────────────────────────

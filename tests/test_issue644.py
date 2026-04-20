@@ -8,11 +8,13 @@ def _available_models_with_cfg(cfg_override):
     old_cfg = dict(_cfg.cfg)
     _cfg.cfg.clear()
     _cfg.cfg.update(cfg_override)
+    _cfg.invalidate_models_cache()
     try:
         return _cfg.get_available_models()
     finally:
         _cfg.cfg.clear()
         _cfg.cfg.update(old_cfg)
+        _cfg.invalidate_models_cache()
 
 
 class TestConfigYamlModelsLoading:

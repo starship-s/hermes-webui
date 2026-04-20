@@ -30,12 +30,14 @@ def _models_with_cfg(model_cfg=None, custom_providers=None, active_provider=None
         config._cfg_mtime = config.Path(config._get_config_path()).stat().st_mtime
     except Exception:
         config._cfg_mtime = 0.0  # no config.yaml present; reload guard is a no-op
+    config.invalidate_models_cache()
     try:
         return config.get_available_models()
     finally:
         config.cfg.clear()
         config.cfg.update(old_cfg)
         config._cfg_mtime = old_mtime
+        config.invalidate_models_cache()
 
 
 # ── Named provider shows its name in the dropdown ─────────────────────────────

@@ -4,6 +4,7 @@ Hermes Web UI -- Session model and in-memory session store.
 import collections
 import json
 import logging
+import os
 import time
 import uuid
 from pathlib import Path
@@ -42,35 +43,40 @@ def _write_session_index(updates=None):
                 if not any(e['session_id'] == s.session_id for e in entries):
                     entries.append(s.compact())
         entries.sort(key=lambda s: s['updated_at'], reverse=True)
-        SESSION_INDEX_FILE.write_text(json.dumps(entries, ensure_ascii=False, indent=2), encoding='utf-8')
+        _tmp = SESSION_INDEX_FILE.with_suffix('.tmp')
+        _tmp.write_text(json.dumps(entries, ensure_ascii=False, indent=2), encoding='utf-8')
+        os.replace(str(_tmp), str(SESSION_INDEX_FILE))
         return
 
     # Fast path: patch existing index with updated sessions.
     # This avoids loading all 170+ session files on every single save().
+    # LOCK covers the entire read-patch-write to prevent concurrent save() calls
+    # from both reading the same baseline and one losing its update.
+    _fallback = False
     try:
-        existing = json.loads(SESSION_INDEX_FILE.read_text(encoding='utf-8'))
+        with LOCK:
+            existing = json.loads(SESSION_INDEX_FILE.read_text(encoding='utf-8'))
+            # Build lookup of updated entries
+            updated_map = {s.session_id: s.compact() for s in updates}
+            existing_ids = {e.get('session_id') for e in existing}
+            # Add any updated entries not yet in the index
+            for sid, entry in updated_map.items():
+                if sid not in existing_ids:
+                    existing.append(entry)
+            # Replace matching entries in-place
+            for i, e in enumerate(existing):
+                sid = e.get('session_id')
+                if sid in updated_map:
+                    existing[i] = updated_map[sid]
+            existing.sort(key=lambda s: s.get('updated_at', 0), reverse=True)
+            _tmp = SESSION_INDEX_FILE.with_suffix('.tmp')
+            _tmp.write_text(json.dumps(existing, ensure_ascii=False, indent=2), encoding='utf-8')
+            os.replace(str(_tmp), str(SESSION_INDEX_FILE))
     except Exception:
-        # Corrupt or missing — fall back to full rebuild
+        _fallback = True
+    if _fallback:
+        # Corrupt or missing — fall back to full rebuild (called outside LOCK to avoid deadlock)
         _write_session_index(updates=None)
-        return
-
-    # Build lookup of updated entries
-    updated_map = {s.session_id: s.compact() for s in updates}
-    # Remove deleted sessions (files that no longer exist) and update existing
-    existing_ids = {e.get('session_id') for e in existing}
-    # Add any updated entries not yet in the index
-    for sid, entry in updated_map.items():
-        if sid not in existing_ids:
-            existing.append(entry)
-
-    # Replace matching entries in-place
-    for i, e in enumerate(existing):
-        sid = e.get('session_id')
-        if sid in updated_map:
-            existing[i] = updated_map[sid]
-
-    existing.sort(key=lambda s: s.get('updated_at', 0), reverse=True)
-    SESSION_INDEX_FILE.write_text(json.dumps(existing, ensure_ascii=False, indent=2), encoding='utf-8')
 
 
 class Session:

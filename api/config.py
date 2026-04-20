@@ -10,6 +10,7 @@ Discovery order for all paths:
 """
 
 import collections
+import copy
 import json
 import logging
 import os
@@ -809,6 +810,17 @@ _AVAILABLE_MODELS_CACHE_TTL: float = 60.0  # seconds — refresh at most once pe
 _available_models_cache_lock = threading.Lock()
 
 
+def invalidate_models_cache():
+    """Force the TTL cache for get_available_models() to be cleared.
+
+    Call this after modifying config.cfg in-memory (e.g. in tests) so
+    the next call to get_available_models() picks up the changes rather
+    than returning a stale cached result.
+    """
+    global _AVAILABLE_MODELS_CACHE, _AVAILABLE_MODELS_CACHE_TS
+    _AVAILABLE_MODELS_CACHE = None
+
+
 def get_available_models() -> dict:
     """
     Return available models grouped by provider.
@@ -830,16 +842,11 @@ def get_available_models() -> dict:
         'groups': [{'provider': str, 'models': [{'id': str, 'label': str}]}]
     }
     """
-    # Serve from TTL cache if fresh.
-    global _AVAILABLE_MODELS_CACHE, _AVAILABLE_MODELS_CACHE_TS
-    import time as _time
-    now = _time.monotonic()
-    if _AVAILABLE_MODELS_CACHE is not None and (now - _AVAILABLE_MODELS_CACHE_TS) < _AVAILABLE_MODELS_CACHE_TTL:
-        return _AVAILABLE_MODELS_CACHE
-
     # Reload config from disk if config.yaml has changed since last load.
     # This ensures CLI model changes are picked up on page refresh without
     # a server restart, while avoiding clearing in-memory mocks during tests. (#585)
+    # Must run BEFORE the TTL check so config edits within the 60s window are visible.
+    global _AVAILABLE_MODELS_CACHE, _AVAILABLE_MODELS_CACHE_TS
     try:
         _current_mtime = Path(_get_config_path()).stat().st_mtime
     except OSError:
@@ -848,6 +855,11 @@ def get_available_models() -> dict:
         reload_config()
         # Config changed — force cache invalidation
         _AVAILABLE_MODELS_CACHE = None
+
+    # Serve from TTL cache if fresh.
+    now = time.monotonic()
+    if _AVAILABLE_MODELS_CACHE is not None and (now - _AVAILABLE_MODELS_CACHE_TS) < _AVAILABLE_MODELS_CACHE_TTL:
+        return copy.deepcopy(_AVAILABLE_MODELS_CACHE)
     active_provider = None
     default_model = get_effective_default_model(cfg)
     groups = []
@@ -1305,8 +1317,8 @@ def get_available_models() -> dict:
     }
     # Cache the result for TTL seconds
     _AVAILABLE_MODELS_CACHE = result
-    _AVAILABLE_MODELS_CACHE_TS = _time.monotonic()
-    return result
+    _AVAILABLE_MODELS_CACHE_TS = time.monotonic()
+    return copy.deepcopy(result)
 
 
 # ── Static file path ─────────────────────────────────────────────────────────

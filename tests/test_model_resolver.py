@@ -164,11 +164,13 @@ def _available_models_with_provider(provider):
     """Helper: temporarily set active_provider in config."""
     old_cfg = dict(config.cfg)
     config.cfg['model'] = {'provider': provider}
+    config.invalidate_models_cache()
     try:
         return config.get_available_models()
     finally:
         config.cfg.clear()
         config.cfg.update(old_cfg)
+        config.invalidate_models_cache()
 
 
 def test_non_default_provider_models_use_hint_prefix():
@@ -192,6 +194,7 @@ def test_no_duplicate_when_default_model_is_prefixed():
         'provider': 'anthropic',
         'default': 'anthropic/claude-opus-4.6',
     }
+    _cfg.invalidate_models_cache()
     try:
         result = _cfg.get_available_models()
         norm = lambda mid: mid.split('/', 1)[-1] if '/' in mid else mid
@@ -252,11 +255,13 @@ def _available_models_with_full_cfg(provider, default, base_url):
     # Clear model-override env vars to prevent the real profile from leaking in
     _model_env_keys = ('HERMES_MODEL', 'OPENAI_MODEL', 'LLM_MODEL')
     _saved_env = {k: os.environ.pop(k, None) for k in _model_env_keys}
+    _cfg.invalidate_models_cache()
     try:
         return _cfg.get_available_models()
     finally:
         _cfg.cfg.clear()
         _cfg.cfg.update(old_cfg)
+        _cfg.invalidate_models_cache()
         for k, v in _saved_env.items():
             if v is not None:
                 os.environ[k] = v
@@ -418,11 +423,13 @@ def test_custom_endpoint_uses_model_config_api_key_for_model_discovery(monkeypat
     monkeypatch.delenv('LOCAL_API_KEY', raising=False)
     monkeypatch.delenv('OPENROUTER_API_KEY', raising=False)
     monkeypatch.delenv('API_KEY', raising=False)
+    _cfg.invalidate_models_cache()
     try:
         result = _cfg.get_available_models()
     finally:
         _cfg.cfg.clear()
         _cfg.cfg.update(old_cfg)
+        _cfg.invalidate_models_cache()
 
     assert captured['auth'] == 'Bearer sk-test-model-key'
     assert captured['ua'] == 'OpenAI/Python 1.0'
