@@ -39,20 +39,15 @@ def test_cache_hit_within_ttl():
         return original_reload()
 
     with patch.object(config, "reload_config", wraps=original_reload, side_effect=_counting_reload):
-        # Pin _cfg_mtime so the mtime check doesn't trigger reload_config on its own
         saved_mtime = config._cfg_mtime
         try:
-            config._cfg_mtime = 0.0  # force mismatch so the mtime path is predictable
+            # Force mtime mismatch so the first call triggers reload_config + cache fill
+            config._cfg_mtime = 0.0
             result1 = config.get_available_models()
-            # After first call, set _cfg_mtime to match what reload_config would set
-            # so the second call doesn't see an mtime mismatch
-            config._cfg_mtime = config._cfg_mtime  # keep as-is after first call populated cache
-
-            # Actually, we need _cfg_mtime to match the current file mtime to avoid
-            # re-scan on the second call. Let's capture what get_available_models set.
             first_call_count = call_count
 
-            # Now set _cfg_mtime to the actual file mtime so second call hits cache
+            # Sync _cfg_mtime to the actual file so the second call doesn't
+            # re-trigger reload_config via mtime mismatch — we want it to hit the TTL cache.
             try:
                 config._cfg_mtime = config.Path(config._get_config_path()).stat().st_mtime
             except OSError:
