@@ -9,7 +9,7 @@ captured the trailing entity as part of the URL; esc(clean) then
 double-escaped the & into &amp;, yielding &amp;quot; in the rendered HTML and
 in the copy buffer.
 
-Fix (Option A): extend _al_stash regex to also stash <pre>[\s\S]*?<\/pre>
+Fix (Option A): extend _al_stash regex to also stash <pre\b[^>]*>[\s\S]*?<\/pre>
 blocks so the outer autolink scanner never touches code-block content.
 """
 import html as _html
@@ -72,7 +72,7 @@ def _al_stash_and_autolink(s, fixed=True):
         return f'\x00B{len(al_stash)-1}\x00'
 
     if fixed:
-        pattern = r'(<a\b[^>]*>[\s\S]*?</a>|<img\b[^>]*>|<pre>[\s\S]*?</pre>)'
+        pattern = r'(<a\b[^>]*>[\s\S]*?</a>|<img\b[^>]*>|<pre\b[^>]*>[\s\S]*?</pre>)'
     else:
         pattern = r'(<a\b[^>]*>[\s\S]*?</a>|<img\b[^>]*>)'
 
@@ -109,9 +109,9 @@ class TestAlStashSourceFix:
         """_al_stash regex must stash <pre>…</pre> blocks to protect code from autolink."""
         al_stash_idx = UI_JS.index('const _al_stash=[]')
         al_stash_block = UI_JS[al_stash_idx : al_stash_idx + 300]
-        assert '<pre>' in al_stash_block, (
-            "_al_stash replacement must include a <pre>…</pre> pattern so code "
-            "blocks are protected from the outer autolink scanner"
+        assert '<pre\\b' in al_stash_block, (
+            "_al_stash replacement must include an attribute-tolerant <pre\\b[^>]*> "
+            "pattern so code blocks are protected from the outer autolink scanner"
         )
 
     def test_al_stash_pre_regex_uses_lazy_dotall(self):
