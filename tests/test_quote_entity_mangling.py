@@ -9,7 +9,7 @@ captured the trailing entity as part of the URL; esc(clean) then
 double-escaped the & into &amp;, yielding &amp;quot; in the rendered HTML and
 in the copy buffer.
 
-Fix (Option A): extend _al_stash regex to also stash <pre\b[^>]*>[\s\S]*?<\/pre>
+Fix: extend _al_stash regex to also stash <pre\b[^>]*>[\s\S]*?<\/pre>
 blocks so the outer autolink scanner never touches code-block content.
 """
 import html as _html
