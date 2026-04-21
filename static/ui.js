@@ -629,6 +629,25 @@ function renderMd(raw){
   s=s.replace(/(<a\b[^>]*>[\s\S]*?<\/a>)/g,m=>{_a_stash.push(m);return `\x00A${_a_stash.length-1}\x00`;});
   s=s.replace(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g,(_,label,url)=>`<a href="${url.replace(/"/g,'%22')}" target="_blank" rel="noopener">${esc(label)}</a>`);
   s=s.replace(/\x00A(\d+)\x00/g,(_,i)=>_a_stash[+i]);
+  // Stash rendered <pre> blocks (with optional pre-header div) and mermaid/katex
+  // divs before autolink and paragraph splitting so:
+  //  1. URLs inside code blocks are NOT autolinked (fixes &quot; double-encoding).
+  //  2. \n inside code blocks is never replaced with <br> (fixes #745).
+  // Token \x00E (next free after B D F G L M C O A).
+  const _pre_stash=[];
+  s=s.replace(/(<div class="pre-header">[\s\S]*?<\/div>)?<pre>[\s\S]*?<\/pre>|<div class="(mermaid-block|katex-block)"[\s\S]*?<\/div>/g,m=>{
+    _pre_stash.push(m);
+    return '\x00E'+(_pre_stash.length-1)+'\x00';
+  });
+  // Restore math stash → katex placeholder spans/divs
+  // These will be rendered by renderKatexBlocks() after DOM insertion
+  s=s.replace(/\x00M(\d+)\x00/g,(_,i)=>{
+    const item=math_stash[+i];
+    if(item.type==='display'){
+      return `<div class="katex-block" data-katex="display">${esc(item.src)}</div>`;
+    }
+    return `<span class="katex-inline" data-katex="inline">${esc(item.src)}</span>`;
+  });
   // Escape any remaining HTML tags that are NOT from our own markdown output.
   // Our pipeline only emits: <strong>,<em>,<code>,<pre>,<h1-6>,<ul>,<ol>,<li>,
   // <table>,<thead>,<tbody>,<tr>,<th>,<td>,<hr>,<blockquote>,<p>,<br>,<a>,
@@ -646,24 +665,6 @@ function renderMd(raw){
     return `<a href="${clean}" target="_blank" rel="noopener">${esc(clean)}</a>${trail}`;
   });
   s=s.replace(/\x00B(\d+)\x00/g,(_,i)=>_al_stash[+i]);
-  // Restore math stash → katex placeholder spans/divs
-  // These will be rendered by renderKatexBlocks() after DOM insertion
-  s=s.replace(/\x00M(\d+)\x00/g,(_,i)=>{
-    const item=math_stash[+i];
-    if(item.type==='display'){
-      return `<div class="katex-block" data-katex="display">${esc(item.src)}</div>`;
-    }
-    return `<span class="katex-inline" data-katex="inline">${esc(item.src)}</span>`;
-  });
-  // Stash rendered <pre> blocks (with optional pre-header div) and mermaid/katex
-  // divs before paragraph splitting so \n inside code blocks is never replaced
-  // with <br>. Token \x00E (next free after B D F G L M C O A).
-  // Fixes #745: code blocks collapse to single line when not preceded by blank line.
-  const _pre_stash=[];
-  s=s.replace(/(<div class="pre-header">[\s\S]*?<\/div>)?<pre>[\s\S]*?<\/pre>|<div class="(mermaid-block|katex-block)"[\s\S]*?<\/div>/g,m=>{
-    _pre_stash.push(m);
-    return '\x00E'+(_pre_stash.length-1)+'\x00';
-  });
   const parts=s.split(/\n{2,}/);
   s=parts.map(p=>{p=p.trim();if(!p)return '';if(/^<(h[1-6]|ul|ol|pre|hr|blockquote)|^\x00E/.test(p))return p;return `<p>${p.replace(/\n/g,'<br>')}</p>`;}).join('\n');
   s=s.replace(/\x00E(\d+)\x00/g,(_,i)=>_pre_stash[+i]);
