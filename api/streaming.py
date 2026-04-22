@@ -826,6 +826,7 @@ def _run_agent_streaming(session_id, msg_text, model, workspace, stream_id, atta
     # block can safely check `if _checkpoint_stop is not None` even when an
     # exception fires before the checkpoint thread is created (Issue #765).
     _checkpoint_stop = None
+    _ckpt_thread = None
     try:
         s = get_session(session_id)
         s.workspace = str(Path(workspace).expanduser().resolve())
@@ -1243,198 +1244,203 @@ def _run_agent_streaming(session_id, msg_text, model, workspace, stream_id, atta
                 task_id=session_id,
                 persist_user_message=msg_text,
             )
-            s.messages = _restore_reasoning_metadata(
-                _previous_messages,
-                result.get('messages') or s.messages,
-            )
-            # Strip XML tool-call blocks from assistant message content.
-            # DeepSeek and some other providers emit <function_calls>...</function_calls>
-            # in the raw response text; this must be removed before the content is
-            # saved to the session and displayed in the chat bubble. (#702)
-            for _m in s.messages:
-                if isinstance(_m, dict) and _m.get('role') == 'assistant':
-                    _raw_content = _m.get('content')
-                    if isinstance(_raw_content, str):
-                        _cleaned = _strip_xml_tool_calls(_raw_content)
-                        if _cleaned != _raw_content:
-                            _m['content'] = _cleaned
-                    elif isinstance(_raw_content, list):
-                        for _part in _raw_content:
-                            if isinstance(_part, dict) and isinstance(_part.get('text'), str):
-                                _part['text'] = _strip_xml_tool_calls(_part['text'])
-
-            # ── Detect silent agent failure (no assistant reply produced) ──
-            # When the agent catches an auth/network error internally it may return
-            # an empty final_response without raising — the stream would end with
-            # a done event containing zero assistant messages, leaving the user with
-            # no feedback. Emit an apperror so the client shows an inline error.
-            _assistant_added = any(
-                m.get('role') == 'assistant' and str(m.get('content') or '').strip()
-                for m in (result.get('messages') or [])
-            )
-            # _token_sent tracks whether on_token() was called (any streamed text)
-            if not _assistant_added and not _token_sent:
-                _last_err = getattr(agent, '_last_error', None) or result.get('error') or ''
-                _err_str = str(_last_err) if _last_err else ''
-                _err_lower = _err_str.lower()
-                _is_quota = (
-                    'insufficient credit' in _err_lower
-                    or 'credit balance' in _err_lower
-                    or 'credits exhausted' in _err_lower
-                    or 'quota_exceeded' in _err_lower
-                    or 'quota exceeded' in _err_lower
-                    or 'exceeded your current quota' in _err_lower
+            if _checkpoint_stop is not None:
+                _checkpoint_stop.set()
+            if _ckpt_thread is not None:
+                _ckpt_thread.join(timeout=15)
+            with _agent_lock:
+                s.messages = _restore_reasoning_metadata(
+                    _previous_messages,
+                    result.get('messages') or s.messages,
                 )
-                _is_auth = (
-                    not _is_quota and (
-                        '401' in _err_str
-                        or (_last_err and 'AuthenticationError' in type(_last_err).__name__)
-                        or 'authentication' in _err_lower
-                        or 'unauthorized' in _err_lower
-                        or 'invalid api key' in _err_lower
-                        or 'invalid_api_key' in _err_lower
-                    )
+                # Strip XML tool-call blocks from assistant message content.
+                # DeepSeek and some other providers emit <function_calls>...</function_calls>
+                # in the raw response text; this must be removed before the content is
+                # saved to the session and displayed in the chat bubble. (#702)
+                for _m in s.messages:
+                    if isinstance(_m, dict) and _m.get('role') == 'assistant':
+                        _raw_content = _m.get('content')
+                        if isinstance(_raw_content, str):
+                            _cleaned = _strip_xml_tool_calls(_raw_content)
+                            if _cleaned != _raw_content:
+                                _m['content'] = _cleaned
+                        elif isinstance(_raw_content, list):
+                            for _part in _raw_content:
+                                if isinstance(_part, dict) and isinstance(_part.get('text'), str):
+                                    _part['text'] = _strip_xml_tool_calls(_part['text'])
+    
+                # ── Detect silent agent failure (no assistant reply produced) ──
+                # When the agent catches an auth/network error internally it may return
+                # an empty final_response without raising — the stream would end with
+                # a done event containing zero assistant messages, leaving the user with
+                # no feedback. Emit an apperror so the client shows an inline error.
+                _assistant_added = any(
+                    m.get('role') == 'assistant' and str(m.get('content') or '').strip()
+                    for m in (result.get('messages') or [])
                 )
-                if _is_quota:
-                    _err_label = 'Out of credits'
-                    _err_type = 'quota_exhausted'
-                    _err_hint = 'Your provider account is out of credits. Top up your balance or switch providers via `hermes model`.'
-                elif _is_auth:
-                    _err_label = 'Authentication failed'
-                    _err_type = 'auth_mismatch'
-                    _err_hint = (
-                        'The selected model may not be supported by your configured provider or '
-                        'your API key is invalid. Run `hermes model` in your terminal to '
-                        'update credentials, then restart the WebUI.'
+                # _token_sent tracks whether on_token() was called (any streamed text)
+                if not _assistant_added and not _token_sent:
+                    _last_err = getattr(agent, '_last_error', None) or result.get('error') or ''
+                    _err_str = str(_last_err) if _last_err else ''
+                    _err_lower = _err_str.lower()
+                    _is_quota = (
+                        'insufficient credit' in _err_lower
+                        or 'credit balance' in _err_lower
+                        or 'credits exhausted' in _err_lower
+                        or 'quota_exceeded' in _err_lower
+                        or 'quota exceeded' in _err_lower
+                        or 'exceeded your current quota' in _err_lower
                     )
-                else:
-                    _err_label = 'No response received'
-                    _err_type = 'no_response'
-                    _err_hint = 'Verify your API key is valid and the selected model is available for your account.'
-                put('apperror', {
-                    'message': _err_str or f'{_err_label}.',
-                    'type': _err_type,
-                    'hint': _err_hint,
-                })
-                # Clear stream/pending state so the session does not appear
-                # "agent_running" on reload after a silent failure.
+                    _is_auth = (
+                        not _is_quota and (
+                            '401' in _err_str
+                            or (_last_err and 'AuthenticationError' in type(_last_err).__name__)
+                            or 'authentication' in _err_lower
+                            or 'unauthorized' in _err_lower
+                            or 'invalid api key' in _err_lower
+                            or 'invalid_api_key' in _err_lower
+                        )
+                    )
+                    if _is_quota:
+                        _err_label = 'Out of credits'
+                        _err_type = 'quota_exhausted'
+                        _err_hint = 'Your provider account is out of credits. Top up your balance or switch providers via `hermes model`.'
+                    elif _is_auth:
+                        _err_label = 'Authentication failed'
+                        _err_type = 'auth_mismatch'
+                        _err_hint = (
+                            'The selected model may not be supported by your configured provider or '
+                            'your API key is invalid. Run `hermes model` in your terminal to '
+                            'update credentials, then restart the WebUI.'
+                        )
+                    else:
+                        _err_label = 'No response received'
+                        _err_type = 'no_response'
+                        _err_hint = 'Verify your API key is valid and the selected model is available for your account.'
+                    put('apperror', {
+                        'message': _err_str or f'{_err_label}.',
+                        'type': _err_type,
+                        'hint': _err_hint,
+                    })
+                    # Clear stream/pending state so the session does not appear
+                    # "agent_running" on reload after a silent failure.
+                    if _checkpoint_stop is not None:
+                        _checkpoint_stop.set()
+                    if _ckpt_thread is not None:
+                        _ckpt_thread.join(timeout=15)
+                    # Persist the error so it survives page reload.
+                    # _error=True ensures _sanitize_messages_for_api excludes it from
+                    # subsequent API calls so the LLM never sees its own error as prior context.
+                    with _agent_lock:
+                        s.active_stream_id = None
+                        s.pending_user_message = None
+                        s.pending_attachments = []
+                        s.pending_started_at = None
+                        s.messages.append({
+                            'role': 'assistant',
+                            'content': f'**{_err_label}:** {_err_str or _err_label}\n\n*{_err_hint}*',
+                            'timestamp': int(time.time()),
+                            '_error': True,
+                        })
+                        try:
+                            s.save()
+                        except Exception:
+                            pass
+                    return  # apperror already closes the stream on the client side
+    
+                # ── Handle context compression side effects ──
+                # If compression fired inside run_conversation, the agent may have
+                # rotated its session_id. Detect and fix the mismatch so the WebUI
+                # continues writing to the correct session file.
+                _agent_sid = getattr(agent, 'session_id', None)
+                _compressed = False
+                if _agent_sid and _agent_sid != session_id:
+                    old_sid = session_id
+                    new_sid = _agent_sid
+                    # Rename the session file
+                    old_path = SESSION_DIR / f'{old_sid}.json'
+                    new_path = SESSION_DIR / f'{new_sid}.json'
+                    s.session_id = new_sid
+                    with LOCK:
+                        if old_sid in SESSIONS:
+                            SESSIONS[new_sid] = SESSIONS.pop(old_sid)
+                    if old_path.exists() and not new_path.exists():
+                        try:
+                            old_path.rename(new_path)
+                        except OSError:
+                            logger.debug("Failed to rename session file during compression")
+                    _compressed = True
+                # Also detect compression via the result dict or compressor state
+                if not _compressed:
+                    _compressor = getattr(agent, 'context_compressor', None)
+                    if _compressor and getattr(_compressor, 'compression_count', 0) > 0:
+                        _compressed = True
+                # Notify the frontend that compression happened
+                if _compressed:
+                    put('compressed', {
+                        'message': 'Context auto-compressed to continue the conversation',
+                    })
+    
+                # Stamp 'timestamp' on any messages that don't have one yet
+                _now = time.time()
+                for _m in s.messages:
+                    if isinstance(_m, dict) and not _m.get('timestamp') and not _m.get('_ts'):
+                        _m['timestamp'] = int(_now)
+                # Only auto-generate title when still default; preserves user renames
+                if s.title == 'Untitled' or s.title == 'New Chat' or not s.title:
+                    s.title = title_from(s.messages, s.title)
+                _looks_default = (s.title == 'Untitled' or s.title == 'New Chat' or not s.title)
+                _looks_provisional = _is_provisional_title(s.title, s.messages)
+                _invalid_existing_title = _looks_invalid_generated_title(s.title)
+                _should_bg_title = (
+                    (_looks_default or _looks_provisional or _invalid_existing_title)
+                    and (not getattr(s, 'llm_title_generated', False) or _invalid_existing_title)
+                )
+                _u0 = ''
+                _a0 = ''
+                if _should_bg_title:
+                    _u0, _a0 = _first_exchange_snippets(s.messages)
+                # Read token/cost usage from the agent object (if available)
+                input_tokens = getattr(agent, 'session_prompt_tokens', 0) or 0
+                output_tokens = getattr(agent, 'session_completion_tokens', 0) or 0
+                estimated_cost = getattr(agent, 'session_estimated_cost_usd', None)
+                s.input_tokens = (s.input_tokens or 0) + input_tokens
+                s.output_tokens = (s.output_tokens or 0) + output_tokens
+                if estimated_cost:
+                    s.estimated_cost = (s.estimated_cost or 0) + estimated_cost
+                # Persist tool-call summaries even when the final message history only
+                # kept bare tool rows and omitted explicit assistant tool_call IDs.
+                tool_calls = _extract_tool_calls_from_messages(
+                    s.messages,
+                    live_tool_calls=_live_tool_calls,
+                )
+                s.tool_calls = tool_calls
                 s.active_stream_id = None
                 s.pending_user_message = None
                 s.pending_attachments = []
                 s.pending_started_at = None
-                # Stop the checkpoint thread before mutating the session so
-                # _periodic_checkpoint never calls s.save() while we are
-                # appending to s.messages (Issue #765).
-                if _checkpoint_stop is not None:
-                    _checkpoint_stop.set()
-                # Persist the error so it survives page reload.
-                # _error=True ensures _sanitize_messages_for_api excludes it from
-                # subsequent API calls so the LLM never sees its own error as prior context.
-                s.messages.append({
-                    'role': 'assistant',
-                    'content': f'**{_err_label}:** {_err_str or _err_label}\n\n*{_err_hint}*',
-                    'timestamp': int(time.time()),
-                    '_error': True,
-                })
-                try:
-                    s.save()
-                except Exception:
-                    pass
-                return  # apperror already closes the stream on the client side
-
-            # ── Handle context compression side effects ──
-            # If compression fired inside run_conversation, the agent may have
-            # rotated its session_id. Detect and fix the mismatch so the WebUI
-            # continues writing to the correct session file.
-            _agent_sid = getattr(agent, 'session_id', None)
-            _compressed = False
-            if _agent_sid and _agent_sid != session_id:
-                old_sid = session_id
-                new_sid = _agent_sid
-                # Rename the session file
-                old_path = SESSION_DIR / f'{old_sid}.json'
-                new_path = SESSION_DIR / f'{new_sid}.json'
-                s.session_id = new_sid
-                with LOCK:
-                    if old_sid in SESSIONS:
-                        SESSIONS[new_sid] = SESSIONS.pop(old_sid)
-                if old_path.exists() and not new_path.exists():
-                    try:
-                        old_path.rename(new_path)
-                    except OSError:
-                        logger.debug("Failed to rename session file during compression")
-                _compressed = True
-            # Also detect compression via the result dict or compressor state
-            if not _compressed:
-                _compressor = getattr(agent, 'context_compressor', None)
-                if _compressor and getattr(_compressor, 'compression_count', 0) > 0:
-                    _compressed = True
-            # Notify the frontend that compression happened
-            if _compressed:
-                put('compressed', {
-                    'message': 'Context auto-compressed to continue the conversation',
-                })
-
-            # Stamp 'timestamp' on any messages that don't have one yet
-            _now = time.time()
-            for _m in s.messages:
-                if isinstance(_m, dict) and not _m.get('timestamp') and not _m.get('_ts'):
-                    _m['timestamp'] = int(_now)
-            # Only auto-generate title when still default; preserves user renames
-            if s.title == 'Untitled' or s.title == 'New Chat' or not s.title:
-                s.title = title_from(s.messages, s.title)
-            _looks_default = (s.title == 'Untitled' or s.title == 'New Chat' or not s.title)
-            _looks_provisional = _is_provisional_title(s.title, s.messages)
-            _invalid_existing_title = _looks_invalid_generated_title(s.title)
-            _should_bg_title = (
-                (_looks_default or _looks_provisional or _invalid_existing_title)
-                and (not getattr(s, 'llm_title_generated', False) or _invalid_existing_title)
-            )
-            _u0 = ''
-            _a0 = ''
-            if _should_bg_title:
-                _u0, _a0 = _first_exchange_snippets(s.messages)
-            # Read token/cost usage from the agent object (if available)
-            input_tokens = getattr(agent, 'session_prompt_tokens', 0) or 0
-            output_tokens = getattr(agent, 'session_completion_tokens', 0) or 0
-            estimated_cost = getattr(agent, 'session_estimated_cost_usd', None)
-            s.input_tokens = (s.input_tokens or 0) + input_tokens
-            s.output_tokens = (s.output_tokens or 0) + output_tokens
-            if estimated_cost:
-                s.estimated_cost = (s.estimated_cost or 0) + estimated_cost
-            # Persist tool-call summaries even when the final message history only
-            # kept bare tool rows and omitted explicit assistant tool_call IDs.
-            tool_calls = _extract_tool_calls_from_messages(
-                s.messages,
-                live_tool_calls=_live_tool_calls,
-            )
-            s.tool_calls = tool_calls
-            s.active_stream_id = None
-            s.pending_user_message = None
-            s.pending_attachments = []
-            s.pending_started_at = None
-            # Tag the matching user message with attachment filenames for display on reload
-            # Only tag a user message whose content relates to this turn's text
-            # (msg_text is the full message including the [Attached files: ...] suffix)
-            if attachments:
-                for m in reversed(s.messages):
-                    if m.get('role') == 'user':
-                        content = str(m.get('content', ''))
-                        # Match if content is part of the sent message or vice-versa
-                        base_text = msg_text.split('\n\n[Attached files:')[0].strip() if '\n\n[Attached files:' in msg_text else msg_text
-                        if base_text[:60] in content or content[:60] in msg_text:
-                            m['attachments'] = attachments
+                # Tag the matching user message with attachment filenames for display on reload
+                # Only tag a user message whose content relates to this turn's text
+                # (msg_text is the full message including the [Attached files: ...] suffix)
+                if attachments:
+                    for m in reversed(s.messages):
+                        if m.get('role') == 'user':
+                            content = str(m.get('content', ''))
+                            # Match if content is part of the sent message or vice-versa
+                            base_text = msg_text.split('\n\n[Attached files:')[0].strip() if '\n\n[Attached files:' in msg_text else msg_text
+                            if base_text[:60] in content or content[:60] in msg_text:
+                                m['attachments'] = attachments
+                                break
+                # Persist reasoning trace in the session so it survives reload.
+                # Must run BEFORE s.save() — otherwise the mutation lives only in
+                # memory until the next turn's save, and the last-turn thinking card
+                # is lost when the user reloads immediately after a response.
+                if _reasoning_text and s.messages:
+                    for _rm in reversed(s.messages):
+                        if isinstance(_rm, dict) and _rm.get('role') == 'assistant':
+                            _rm['reasoning'] = _reasoning_text
                             break
-            # Persist reasoning trace in the session so it survives reload.
-            # Must run BEFORE s.save() — otherwise the mutation lives only in
-            # memory until the next turn's save, and the last-turn thinking card
-            # is lost when the user reloads immediately after a response.
-            if _reasoning_text and s.messages:
-                for _rm in reversed(s.messages):
-                    if isinstance(_rm, dict) and _rm.get('role') == 'assistant':
-                        _rm['reasoning'] = _reasoning_text
-                        break
-            s.save()
+                s.save()
             # Sync to state.db for /insights (opt-in setting)
             try:
                 from api.config import load_settings as _load_settings
@@ -1540,28 +1546,28 @@ def _run_agent_streaming(session_id, msg_text, model, workspace, stream_id, atta
         else:
             _exc_label, _exc_type, _exc_hint = 'Error', 'error', ''
         if s is not None:
-            s.active_stream_id = None
-            s.pending_user_message = None
-            s.pending_attachments = []
-            s.pending_started_at = None
-            # Stop the checkpoint thread before mutating the session so
-            # _periodic_checkpoint never calls s.save() while we are
-            # appending to s.messages (Issue #765).
             if _checkpoint_stop is not None:
                 _checkpoint_stop.set()
+            if _ckpt_thread is not None:
+                _ckpt_thread.join(timeout=15)
             # Persist the error so it survives page reload.
             # _error=True ensures _sanitize_messages_for_api excludes it from subsequent
             # API calls so the LLM never sees its own error as prior context on the next turn.
-            s.messages.append({
-                'role': 'assistant',
-                'content': f'**{_exc_label}:** {err_str}' + (f'\n\n*{_exc_hint}*' if _exc_hint else ''),
-                'timestamp': int(time.time()),
-                '_error': True,
-            })
-            try:
-                s.save()
-            except Exception:
-                pass
+            with _agent_lock:
+                s.active_stream_id = None
+                s.pending_user_message = None
+                s.pending_attachments = []
+                s.pending_started_at = None
+                s.messages.append({
+                    'role': 'assistant',
+                    'content': f'**{_exc_label}:** {err_str}' + (f'\n\n*{_exc_hint}*' if _exc_hint else ''),
+                    'timestamp': int(time.time()),
+                    '_error': True,
+                })
+                try:
+                    s.save()
+                except Exception:
+                    pass
         _apperror_payload: dict = {'message': err_str, 'type': _exc_type}
         if _exc_hint:
             _apperror_payload['hint'] = _exc_hint
@@ -1570,6 +1576,8 @@ def _run_agent_streaming(session_id, msg_text, model, workspace, stream_id, atta
         # Stop periodic checkpoint thread if it was started (Issue #765)
         if _checkpoint_stop is not None:
             _checkpoint_stop.set()
+        if _ckpt_thread is not None:
+            _ckpt_thread.join(timeout=15)
         _clear_thread_env()  # TD1: always clear thread-local context
         with STREAMS_LOCK:
             STREAMS.pop(stream_id, None)

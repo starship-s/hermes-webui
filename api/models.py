@@ -1,10 +1,9 @@
-"""
-Hermes Web UI -- Session model and in-memory session store.
-"""
+"""Hermes Web UI -- Session model and in-memory session store."""
 import collections
 import json
 import logging
 import os
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -43,9 +42,21 @@ def _write_session_index(updates=None):
                 if not any(e['session_id'] == s.session_id for e in entries):
                     entries.append(s.compact())
             entries.sort(key=lambda s: s['updated_at'], reverse=True)
-            _tmp = SESSION_INDEX_FILE.with_suffix('.tmp')
-            _tmp.write_text(json.dumps(entries, ensure_ascii=False, indent=2), encoding='utf-8')
-            os.replace(_tmp, SESSION_INDEX_FILE)
+            _payload = json.dumps(entries, ensure_ascii=False, indent=2)
+            _tmp = SESSION_INDEX_FILE.with_suffix(f'.tmp.{os.getpid()}.{threading.current_thread().ident}')
+            try:
+                with open(_tmp, 'w', encoding='utf-8') as f:
+                    f.write(_payload)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.replace(_tmp, SESSION_INDEX_FILE)
+            except Exception:
+                # Best-effort cleanup of stale tmp on failure
+                try:
+                    _tmp.unlink(missing_ok=True)
+                except Exception:
+                    pass
+                raise
         return
 
     # Fast path: patch existing index with updated sessions.
@@ -69,9 +80,20 @@ def _write_session_index(updates=None):
                 if sid in updated_map:
                     existing[i] = updated_map[sid]
             existing.sort(key=lambda s: s.get('updated_at', 0), reverse=True)
-            _tmp = SESSION_INDEX_FILE.with_suffix('.tmp')
-            _tmp.write_text(json.dumps(existing, ensure_ascii=False, indent=2), encoding='utf-8')
-            os.replace(_tmp, SESSION_INDEX_FILE)
+            _payload = json.dumps(existing, ensure_ascii=False, indent=2)
+            _tmp = SESSION_INDEX_FILE.with_suffix(f'.tmp.{os.getpid()}.{threading.current_thread().ident}')
+            try:
+                with open(_tmp, 'w', encoding='utf-8') as f:
+                    f.write(_payload)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.replace(_tmp, SESSION_INDEX_FILE)
+            except Exception:
+                try:
+                    _tmp.unlink(missing_ok=True)
+                except Exception:
+                    pass
+                raise
     except Exception:
         _fallback = True
     if _fallback:
@@ -125,9 +147,19 @@ class Session:
         if touch_updated_at:
             self.updated_at = time.time()
         payload = json.dumps(self.__dict__, ensure_ascii=False, indent=2)
-        tmp = self.path.with_suffix('.tmp')
-        tmp.write_text(payload, encoding='utf-8')
-        os.replace(tmp, self.path)
+        tmp = self.path.with_suffix(f'.tmp.{os.getpid()}.{threading.current_thread().ident}')
+        try:
+            with open(tmp, 'w', encoding='utf-8') as f:
+                f.write(payload)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, self.path)
+        except Exception:
+            try:
+                tmp.unlink(missing_ok=True)
+            except Exception:
+                pass
+            raise
         if not skip_index:
             _write_session_index(updates=[self])
 
