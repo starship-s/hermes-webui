@@ -45,6 +45,7 @@ from api.config import (
     MAX_FILE_BYTES,
     MAX_UPLOAD_BYTES,
     CHAT_LOCK,
+    _get_session_agent_lock,
     load_settings,
     save_settings,
     set_hermes_default_model,
@@ -975,8 +976,9 @@ def handle_post(handler, parsed) -> bool:
             s = get_session(body["session_id"])
         except KeyError:
             return bad(handler, "Session not found", 404)
-        s.title = str(body["title"]).strip()[:80] or "Untitled"
-        s.save()
+        with _get_session_agent_lock(body["session_id"]):
+            s.title = str(body["title"]).strip()[:80] or "Untitled"
+            s.save()
         return j(handler, {"session": s.compact()})
 
     if parsed.path == "/api/personality/set":
@@ -1019,8 +1021,9 @@ def handle_post(handler, parsed) -> bool:
                 prompt = "\n".join(p for p in parts if p)
             else:
                 prompt = str(value)
-        s.personality = name if name else None
-        s.save()
+        with _get_session_agent_lock(sid):
+            s.personality = name if name else None
+            s.save()
         return j(handler, {"ok": True, "personality": s.personality, "prompt": prompt})
 
     if parsed.path == "/api/session/update":
@@ -1082,10 +1085,11 @@ def handle_post(handler, parsed) -> bool:
             s = get_session(body["session_id"])
         except KeyError:
             return bad(handler, "Session not found", 404)
-        s.messages = []
-        s.tool_calls = []
-        s.title = "Untitled"
-        s.save()
+        with _get_session_agent_lock(body["session_id"]):
+            s.messages = []
+            s.tool_calls = []
+            s.title = "Untitled"
+            s.save()
         return j(handler, {"ok": True, "session": s.compact()})
 
     if parsed.path == "/api/session/truncate":
@@ -1100,8 +1104,9 @@ def handle_post(handler, parsed) -> bool:
         except KeyError:
             return bad(handler, "Session not found", 404)
         keep = int(body["keep_count"])
-        s.messages = s.messages[:keep]
-        s.save()
+        with _get_session_agent_lock(body["session_id"]):
+            s.messages = s.messages[:keep]
+            s.save()
         return j(
             handler, {"ok": True, "session": s.compact() | {"messages": s.messages}}
         )

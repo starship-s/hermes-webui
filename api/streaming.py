@@ -2,6 +2,7 @@
 Hermes Web UI -- SSE streaming engine and agent thread runner.
 Includes Sprint 10 cancel support via CANCEL_FLAGS.
 """
+import contextlib
 import json
 import logging
 import os
@@ -1226,7 +1227,9 @@ def _run_agent_streaming(session_id, msg_text, model, workspace, stream_id, atta
                     try:
                         cur = _checkpoint_activity[0]
                         if cur > last_saved_activity:
-                            s.save(skip_index=True)
+                            _lock = _agent_lock if _agent_lock is not None else contextlib.nullcontext()
+                            with _lock:
+                                s.save(skip_index=True)
                             last_saved_activity = cur
                     except Exception as e:
                         logger.debug("Periodic checkpoint save failed: %s", e)
@@ -1549,7 +1552,8 @@ def _run_agent_streaming(session_id, msg_text, model, workspace, stream_id, atta
             # Persist the error so it survives page reload.
             # _error=True ensures _sanitize_messages_for_api excludes it from subsequent
             # API calls so the LLM never sees its own error as prior context on the next turn.
-            with _agent_lock:
+            _lock_ctx = _agent_lock if _agent_lock is not None else contextlib.nullcontext()
+            with _lock_ctx:
                 s.active_stream_id = None
                 s.pending_user_message = None
                 s.pending_attachments = []
@@ -1662,15 +1666,20 @@ def cancel_stream(stream_id: str) -> bool:
         _cancel_session_id = getattr(agent, 'session_id', None) if agent else None
 
     # Session cleanup outside STREAMS_LOCK to preserve lock ordering.
+    # Acquire the per-session _agent_lock too, mirroring every other session
+    # writer (streaming success/error paths, periodic checkpoint, POST endpoints)
+    # so the cancel-path mutation races neither the checkpoint thread nor
+    # concurrent undo/retry calls.
     if _cancel_session_id:
-        try:
-            _cs = get_session(_cancel_session_id)
-            _cs.active_stream_id = None
-            _cs.pending_user_message = None
-            _cs.pending_attachments = []
-            _cs.pending_started_at = None
-            _cs.save()
-        except Exception:
-            logger.debug("Failed to clear session state on cancel for %s", _cancel_session_id)
+        with _get_session_agent_lock(_cancel_session_id):
+            try:
+                _cs = get_session(_cancel_session_id)
+                _cs.active_stream_id = None
+                _cs.pending_user_message = None
+                _cs.pending_attachments = []
+                _cs.pending_started_at = None
+                _cs.save()
+            except Exception:
+                logger.debug("Failed to clear session state on cancel for %s", _cancel_session_id)
 
     return True

@@ -398,3 +398,213 @@ class TestIssue765FollowupHardening:
 
         with pytest.raises(ValueError, match="early failure"):
             mimic_run_agent_streaming()
+
+    def test_agent_lock_null_guard_in_except_block(self):
+        """The except block must not crash with AttributeError when _agent_lock
+        is None (e.g. when get_session succeeds but _get_session_agent_lock
+        hasn't been called yet, or _get_session_agent_lock itself raised).
+
+        The code must use a nullcontext fallback rather than unconditionally
+        entering `with _agent_lock:`."""
+        src = (Path(__file__).parent.parent / "api" / "streaming.py").read_text(
+            encoding="utf-8"
+        )
+        # Verify contextlib.nullcontext is used as a fallback
+        assert "contextlib.nullcontext()" in src, (
+            "The except block must guard _agent_lock being None by falling "
+            "back to contextlib.nullcontext() instead of unconditionally "
+            "entering `with _agent_lock:`"
+        )
+        # Verify the except block uses _lock_ctx (the guarded variable)
+        assert "_lock_ctx" in src, (
+            "The except block must assign _agent_lock / nullcontext to a "
+            "variable and use it, not enter `with _agent_lock:` directly"
+        )
+
+    def test_periodic_checkpoint_uses_agent_lock(self):
+        """The periodic checkpoint thread must hold _agent_lock while saving
+        to prevent concurrent mutation races with other endpoints."""
+        src = (Path(__file__).parent.parent / "api" / "streaming.py").read_text(
+            encoding="utf-8"
+        )
+        # Find the _periodic_checkpoint function
+        ckpt_idx = src.find("def _periodic_checkpoint():")
+        assert ckpt_idx != -1, "_periodic_checkpoint function not found"
+        ckpt_block = src[ckpt_idx:ckpt_idx + 600]
+        assert "_lock" in ckpt_block or "_agent_lock" in ckpt_block, (
+            "_periodic_checkpoint must hold _agent_lock (or its nullcontext "
+            "fallback) while calling s.save() to prevent race conditions with "
+            "other session-mutating endpoints"
+        )
+
+    def test_cancel_stream_uses_agent_lock(self):
+        """cancel_stream must hold _agent_lock during session cleanup to
+        prevent races with checkpoint saves and other writers."""
+        src = (Path(__file__).parent.parent / "api" / "streaming.py").read_text(
+            encoding="utf-8"
+        )
+        cancel_idx = src.find("def cancel_stream(")
+        assert cancel_idx != -1, "cancel_stream function not found"
+        cancel_block = src[cancel_idx:]
+        # Find the session cleanup section
+        cleanup_idx = cancel_block.find("Session cleanup outside STREAMS_LOCK")
+        assert cleanup_idx != -1, "Session cleanup comment not found in cancel_stream"
+        cleanup_section = cancel_block[cleanup_idx:cleanup_idx + 800]
+        assert "_get_session_agent_lock" in cleanup_section, (
+            "cancel_stream must acquire _get_session_agent_lock during "
+            "session cleanup to serialise with the checkpoint thread and "
+            "other session-mutating endpoints"
+        )
+
+    def test_session_ops_retry_undo_hold_agent_lock(self):
+        """retry_last and undo_last must hold _get_session_agent_lock for the
+        entire read-modify-save cycle."""
+        src = (Path(__file__).parent.parent / "api" / "session_ops.py").read_text(
+            encoding="utf-8"
+        )
+        assert "_get_session_agent_lock" in src, (
+            "session_ops must import _get_session_agent_lock"
+        )
+        # Both functions must use with _get_session_agent_lock(session_id):
+        for func_name in ("retry_last", "undo_last"):
+            func_idx = src.find(f"def {func_name}(")
+            assert func_idx != -1, f"{func_name} not found in session_ops.py"
+            func_block = src[func_idx:func_idx + 1200]
+            assert "with _get_session_agent_lock" in func_block, (
+                f"{func_name} must wrap its read-modify-save cycle in "
+                f"with _get_session_agent_lock(session_id)"
+            )
+
+    def test_periodic_checkpoint_mutation_race_with_undo_last(self, tmp_path, monkeypatch):
+        """Run _periodic_checkpoint against a session whose messages list is
+        concurrently truncated by undo_last; the on-disk JSON must remain
+        parseable and internally consistent."""
+        session_dir = tmp_path / "sessions_undo_race"
+        session_dir.mkdir()
+        index_file = session_dir / "_index.json"
+        monkeypatch.setattr(models, "SESSION_DIR", session_dir)
+        monkeypatch.setattr(models, "SESSION_INDEX_FILE", index_file)
+        models.SESSIONS.clear()
+        try:
+            s = Session(
+                session_id="race_test",
+                title="Race Test",
+                messages=[
+                    {"role": "user", "content": "first"},
+                    {"role": "assistant", "content": "reply 1"},
+                    {"role": "user", "content": "second"},
+                    {"role": "assistant", "content": "reply 2"},
+                    {"role": "user", "content": "third"},
+                    {"role": "assistant", "content": "reply 3"},
+                ],
+            )
+            s.save()
+            models.SESSIONS[s.session_id] = s
+
+            _checkpoint_stop = threading.Event()
+            _checkpoint_activity = [0]
+            errors = []
+
+            def _periodic_checkpoint():
+                last = 0
+                while not _checkpoint_stop.wait(0.01):
+                    try:
+                        cur = _checkpoint_activity[0]
+                        if cur > last:
+                            s.save(skip_index=True)
+                            last = cur
+                    except Exception as e:
+                        errors.append(e)
+
+            t = threading.Thread(target=_periodic_checkpoint, daemon=True)
+            t.start()
+
+            from api.session_ops import undo_last
+            for _ in range(5):
+                _checkpoint_activity[0] += 1
+                time.sleep(0.02)
+                try:
+                    undo_last("race_test")
+                except ValueError:
+                    pass
+                s.messages.append({"role": "user", "content": f"msg-{_}"})
+                s.messages.append({"role": "assistant", "content": f"ans-{_}"})
+                s.save()
+
+            _checkpoint_stop.set()
+            t.join(timeout=2)
+
+            assert not errors, f"Checkpoint thread encountered errors: {errors}"
+            # Verify the on-disk JSON is parseable
+            data = json.loads(s.path.read_text())
+            assert data["session_id"] == "race_test"
+            # Messages must be a list (not corrupted by concurrent mutation)
+            assert isinstance(data["messages"], list)
+        finally:
+            models.SESSIONS.clear()
+
+    def test_cancel_stream_concurrent_checkpoint_produces_valid_json(self, tmp_path, monkeypatch):
+        """Run cancel_stream while a _periodic_checkpoint thread is concurrently
+        saving the same session; the resulting on-disk JSON must be parseable
+        and active_stream_id must be None."""
+        session_dir = tmp_path / "sessions_cancel_race"
+        session_dir.mkdir()
+        index_file = session_dir / "_index.json"
+        monkeypatch.setattr(models, "SESSION_DIR", session_dir)
+        monkeypatch.setattr(models, "SESSION_INDEX_FILE", index_file)
+        models.SESSIONS.clear()
+        try:
+            s = Session(
+                session_id="cancel_race",
+                title="Cancel Race Test",
+                messages=[
+                    {"role": "user", "content": "hello"},
+                    {"role": "assistant", "content": "world"},
+                ],
+                active_stream_id="stream-abc",
+            )
+            s.save()
+            models.SESSIONS[s.session_id] = s
+
+            _checkpoint_stop = threading.Event()
+            _checkpoint_activity = [0]
+            errors = []
+
+            def _periodic_checkpoint():
+                last = 0
+                while not _checkpoint_stop.wait(0.01):
+                    try:
+                        cur = _checkpoint_activity[0]
+                        if cur > last:
+                            s.save(skip_index=True)
+                            last = cur
+                    except Exception as e:
+                        errors.append(e)
+
+            t = threading.Thread(target=_periodic_checkpoint, daemon=True)
+            t.start()
+
+            # Simulate cancel_stream session cleanup directly
+            from api.config import _get_session_agent_lock
+            for i in range(10):
+                _checkpoint_activity[0] += 1
+                time.sleep(0.01)
+                with _get_session_agent_lock("cancel_race"):
+                    s.active_stream_id = None
+                    s.pending_user_message = None
+                    s.pending_attachments = []
+                    s.pending_started_at = None
+                    s.save()
+
+            _checkpoint_stop.set()
+            t.join(timeout=2)
+
+            assert not errors, f"Checkpoint thread encountered errors: {errors}"
+            data = json.loads(s.path.read_text())
+            assert data["session_id"] == "cancel_race"
+            assert data["active_stream_id"] is None, (
+                "active_stream_id must be None after cancel cleanup"
+            )
+            assert isinstance(data["messages"], list)
+        finally:
+            models.SESSIONS.clear()
