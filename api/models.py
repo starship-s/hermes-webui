@@ -124,10 +124,10 @@ class Session:
     def save(self, touch_updated_at: bool = True, skip_index: bool = False) -> None:
         if touch_updated_at:
             self.updated_at = time.time()
-        self.path.write_text(
-            json.dumps(self.__dict__, ensure_ascii=False, indent=2),
-            encoding='utf-8',
-        )
+        payload = json.dumps(self.__dict__, ensure_ascii=False, indent=2)
+        tmp = self.path.with_suffix('.tmp')
+        tmp.write_text(payload, encoding='utf-8')
+        os.replace(tmp, self.path)
         if not skip_index:
             _write_session_index(updates=[self])
 

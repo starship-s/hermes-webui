@@ -967,6 +967,11 @@ def _run_agent_streaming(session_id, msg_text, model, workspace, stream_id, atta
                 _reasoning_text += str(text)
                 put('reasoning', {'text': str(text)})
 
+            # Pre-initialise the activity counter here so on_tool (which
+            # closes over it) never captures an unbound name even if this
+            # block is reordered later (Issue #765).
+            _checkpoint_activity = [0]
+
             def on_tool(*cb_args, **cb_kwargs):
                 event_type = None
                 name = None
@@ -1211,7 +1216,7 @@ def _run_agent_streaming(session_id, msg_text, model, workspace, stream_id, atta
             # response — better than a silent loss of the entire conversation turn.
             # The final s.save() at task completion handles the full session update + index.
             # (_checkpoint_stop is pre-initialised at the top of the outer try.)
-            _checkpoint_activity = [0]
+            # (_checkpoint_activity is already initialised before on_tool().)
 
             def _periodic_checkpoint():
                 last_saved_activity = 0
@@ -1317,6 +1322,11 @@ def _run_agent_streaming(session_id, msg_text, model, workspace, stream_id, atta
                 s.pending_user_message = None
                 s.pending_attachments = []
                 s.pending_started_at = None
+                # Stop the checkpoint thread before mutating the session so
+                # _periodic_checkpoint never calls s.save() while we are
+                # appending to s.messages (Issue #765).
+                if _checkpoint_stop is not None:
+                    _checkpoint_stop.set()
                 # Persist the error so it survives page reload.
                 # _error=True ensures _sanitize_messages_for_api excludes it from
                 # subsequent API calls so the LLM never sees its own error as prior context.
@@ -1534,6 +1544,11 @@ def _run_agent_streaming(session_id, msg_text, model, workspace, stream_id, atta
             s.pending_user_message = None
             s.pending_attachments = []
             s.pending_started_at = None
+            # Stop the checkpoint thread before mutating the session so
+            # _periodic_checkpoint never calls s.save() while we are
+            # appending to s.messages (Issue #765).
+            if _checkpoint_stop is not None:
+                _checkpoint_stop.set()
             # Persist the error so it survives page reload.
             # _error=True ensures _sanitize_messages_for_api excludes it from subsequent
             # API calls so the LLM never sees its own error as prior context on the next turn.
