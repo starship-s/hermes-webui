@@ -2,6 +2,7 @@
 Hermes Web UI -- SSE streaming engine and agent thread runner.
 Includes Sprint 10 cancel support via CANCEL_FLAGS.
 """
+import contextlib
 import json
 import logging
 import os
@@ -1226,7 +1227,9 @@ def _run_agent_streaming(session_id, msg_text, model, workspace, stream_id, atta
                     try:
                         cur = _checkpoint_activity[0]
                         if cur > last_saved_activity:
-                            s.save(skip_index=True)
+                            _lock = _agent_lock if _agent_lock is not None else contextlib.nullcontext()
+                            with _lock:
+                                s.save(skip_index=True)
                             last_saved_activity = cur
                     except Exception as e:
                         logger.debug("Periodic checkpoint save failed: %s", e)
@@ -1549,7 +1552,8 @@ def _run_agent_streaming(session_id, msg_text, model, workspace, stream_id, atta
             # Persist the error so it survives page reload.
             # _error=True ensures _sanitize_messages_for_api excludes it from subsequent
             # API calls so the LLM never sees its own error as prior context on the next turn.
-            with _agent_lock:
+            _lock_ctx = _agent_lock if _agent_lock is not None else contextlib.nullcontext()
+            with _lock_ctx:
                 s.active_stream_id = None
                 s.pending_user_message = None
                 s.pending_attachments = []

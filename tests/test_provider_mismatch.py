@@ -628,3 +628,62 @@ def test_stale_ui_js_does_not_inject_unavailable_option():
         "renderSession() must silently reset S.session.model to the first "
         "available option when the session model is not in the dropdown (#829)"
     )
+
+
+# ── Custom provider group as wildcard ──────────────────────────────────────────
+
+def test_custom_group_preserves_cross_provider_model(monkeypatch):
+    """When the only configured group has provider_id='custom', a session model
+    like 'claude/sonnet' must be preserved because custom groups are wildcards
+    whose actual routing capability isn't visible from the catalog."""
+    import api.routes as routes
+
+    monkeypatch.setattr(
+        routes,
+        "get_available_models",
+        lambda: {
+            "active_provider": "custom",
+            "default_model": "my-proxy/default",
+            "groups": [
+                {"provider": "MyProxy", "provider_id": "custom",
+                 "base_url": "https://my-proxy/v1",
+                 "models": [{"id": "my-proxy/default", "label": "Default"}]},
+            ],
+        },
+    )
+
+    effective, changed = routes._resolve_compatible_session_model("claude/sonnet")
+
+    assert changed is False, (
+        f"claude/sonnet should be preserved when active_provider='custom' and "
+        f"a bare custom group exists (custom groups are wildcards), but got changed=True"
+    )
+    assert effective == "claude/sonnet"
+
+
+def test_has_openrouter_group_uses_normalized_ids(monkeypatch):
+    """The has_openrouter_group check must use normalized provider IDs so that
+    variant capitalisations like 'OpenRouter' are correctly matched."""
+    import api.routes as routes
+
+    monkeypatch.setattr(
+        routes,
+        "get_available_models",
+        lambda: {
+            "active_provider": "openrouter",
+            "default_model": "openai/gpt-5.4-mini",
+            "groups": [
+                {"provider": "OpenRouter", "provider_id": "OpenRouter",
+                 "models": [{"id": "openai/gpt-5.4-mini", "label": "GPT-5.4 Mini"}]},
+            ],
+        },
+    )
+
+    effective, changed = routes._resolve_compatible_session_model(
+        "anthropic/claude-sonnet-4"
+    )
+
+    # OpenRouter group can route *any* provider namespace, so this must
+    # be preserved unchanged
+    assert changed is False
+    assert effective == "anthropic/claude-sonnet-4"

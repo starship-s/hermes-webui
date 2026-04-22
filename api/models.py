@@ -19,6 +19,18 @@ from api.workspace import get_last_workspace
 logger = logging.getLogger(__name__)
 
 
+def _fsync_dir(path):
+    """fsync the parent directory to make rename operations durable across power loss."""
+    try:
+        fd = os.open(str(path), os.O_RDONLY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+    except OSError:
+        pass
+
+
 def _write_session_index(updates=None):
     """Update the session index file.
 
@@ -50,6 +62,8 @@ def _write_session_index(updates=None):
                     f.flush()
                     os.fsync(f.fileno())
                 os.replace(_tmp, SESSION_INDEX_FILE)
+                # fsync parent directory so the rename itself is durable across power loss
+                _fsync_dir(SESSION_INDEX_FILE.parent)
             except Exception:
                 # Best-effort cleanup of stale tmp on failure
                 try:
@@ -88,6 +102,7 @@ def _write_session_index(updates=None):
                     f.flush()
                     os.fsync(f.fileno())
                 os.replace(_tmp, SESSION_INDEX_FILE)
+                _fsync_dir(SESSION_INDEX_FILE.parent)
             except Exception:
                 try:
                     _tmp.unlink(missing_ok=True)
@@ -154,6 +169,8 @@ class Session:
                 f.flush()
                 os.fsync(f.fileno())
             os.replace(tmp, self.path)
+            # fsync parent directory so the rename itself is durable across power loss
+            _fsync_dir(self.path.parent)
         except Exception:
             try:
                 tmp.unlink(missing_ok=True)

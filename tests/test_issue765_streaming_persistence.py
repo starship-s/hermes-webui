@@ -398,3 +398,41 @@ class TestIssue765FollowupHardening:
 
         with pytest.raises(ValueError, match="early failure"):
             mimic_run_agent_streaming()
+
+    def test_agent_lock_null_guard_in_except_block(self):
+        """The except block must not crash with AttributeError when _agent_lock
+        is None (e.g. when get_session succeeds but _get_session_agent_lock
+        hasn't been called yet, or _get_session_agent_lock itself raised).
+
+        The code must use a nullcontext fallback rather than unconditionally
+        entering `with _agent_lock:`."""
+        src = (Path(__file__).parent.parent / "api" / "streaming.py").read_text(
+            encoding="utf-8"
+        )
+        # Verify contextlib.nullcontext is used as a fallback
+        assert "contextlib.nullcontext()" in src, (
+            "The except block must guard _agent_lock being None by falling "
+            "back to contextlib.nullcontext() instead of unconditionally "
+            "entering `with _agent_lock:`"
+        )
+        # Verify the except block uses _lock_ctx (the guarded variable)
+        assert "_lock_ctx" in src, (
+            "The except block must assign _agent_lock / nullcontext to a "
+            "variable and use it, not enter `with _agent_lock:` directly"
+        )
+
+    def test_periodic_checkpoint_uses_agent_lock(self):
+        """The periodic checkpoint thread must hold _agent_lock while saving
+        to prevent concurrent mutation races with other endpoints."""
+        src = (Path(__file__).parent.parent / "api" / "streaming.py").read_text(
+            encoding="utf-8"
+        )
+        # Find the _periodic_checkpoint function
+        ckpt_idx = src.find("def _periodic_checkpoint():")
+        assert ckpt_idx != -1, "_periodic_checkpoint function not found"
+        ckpt_block = src[ckpt_idx:ckpt_idx + 600]
+        assert "_lock" in ckpt_block or "_agent_lock" in ckpt_block, (
+            "_periodic_checkpoint must hold _agent_lock (or its nullcontext "
+            "fallback) while calling s.save() to prevent race conditions with "
+            "other session-mutating endpoints"
+        )

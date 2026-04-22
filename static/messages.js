@@ -27,6 +27,7 @@ async function send(){
     const _cmd=_parsedCmd?COMMANDS.find(c=>c.name===_parsedCmd.name):null;
     if(_cmd){
       let _pushedUser=false;
+      const _lenBefore=S.messages.length;
       if(!_cmd.noEcho){
         if(!S.session){await newSession();await renderSessionList();}
         S.messages.push({role:'user',content:text,_ts:Date.now()/1000});
@@ -38,7 +39,7 @@ async function send(){
       // agent sees the raw text.  Roll back the echo push in that case so
       // the normal send path doesn't duplicate it.
       if(_cmd.fn(_parsedCmd.args)===false){
-        if(_pushedUser){S.messages.pop();renderMessages();}
+        if(_pushedUser){S.messages.length=_lenBefore;renderMessages();}
         // Fall through to normal send path
       } else {
         $('msg').value='';autoResize();hideCmdDropdown();return;

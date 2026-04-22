@@ -147,15 +147,15 @@ class TestSendSlashIntercept:
 
     def test_send_rolls_back_user_push_on_handler_optout(self):
         """If a handler returns false (opt-out — e.g. /reasoning <level>),
-        the pre-pushed user message must be popped so the normal send path
+        the pre-pushed user message must be rolled back so the normal send path
         can add it cleanly for forwarding to the agent."""
         src = _read("static/messages.js")
         idx = src.find("Slash command intercept")
         block = src[idx:idx + 1400]
-        assert "S.messages.pop()" in block, (
-            "send() must S.messages.pop() the user message on handler opt-out "
-            "to avoid duplicating the user turn when falling through to "
-            "the normal send path."
+        assert "S.messages.length=_lenBefore" in block, (
+            "send() must use S.messages.length=_lenBefore on handler opt-out "
+            "to roll back the user echo push, avoiding the fragility of pop() "
+            "which could remove a wrong message if a handler pushed one first."
         )
         assert "===false" in block or "=== false" in block, (
             "opt-out must be detected by handler returning === false"
@@ -200,3 +200,52 @@ def test_personality_with_args_pushes_confirmation_message():
     segment = src[max(0, idx-100): idx + 200]
     assert 'S.messages.push' in segment, "cmdPersonality success path must push an assistant message"
     assert "role:'assistant'" in segment, "cmdPersonality confirmation must have role:assistant"
+
+
+class TestSlashEchoRollback:
+    """Regression tests for the S.messages.pop() → length-snapshot rollback fix.
+
+    The original code used S.messages.pop() to undo the user echo push when a
+    slash-command handler opted out (returned false). This was fragile: if a
+    handler had pushed an assistant message synchronously before returning false,
+    pop() would remove the assistant message instead of the user echo.
+
+    The fix snapshots S.messages.length before the push and rolls back to that
+    length, which correctly removes all messages added by the echo+handler path
+    regardless of how many were inserted.
+    """
+
+    def test_send_uses_length_snapshot_for_rollback(self):
+        """send() must use S.messages.length = _lenBefore for rollback, not pop()."""
+        src = _read("static/messages.js")
+        # Find the slash command intercept block
+        idx = src.find("Slash command intercept")
+        assert idx != -1, "Slash command intercept block not found in messages.js"
+        block = src[idx:idx + 2000]
+        # The fix uses length assignment instead of pop()
+        assert "_lenBefore" in block, (
+            "send() must capture S.messages.length as _lenBefore before the "
+            "user echo push for correct rollback"
+        )
+        assert "S.messages.length=_lenBefore" in block, (
+            "Rollback must use S.messages.length=_lenBefore instead of "
+            "S.messages.pop() to correctly handle cases where a handler has "
+            "pushed additional messages before returning false"
+        )
+
+    def test_send_no_longer_uses_pop_for_rollback(self):
+        """The old S.messages.pop() pattern must no longer appear in the
+        slash command rollback path (it should use length-snapshot instead)."""
+        src = _read("static/messages.js")
+        idx = src.find("Slash command intercept")
+        assert idx != -1
+        block = src[idx:idx + 2000]
+        # Find the "opt-out" rollback line
+        optout_idx = block.find("===false")
+        assert optout_idx != -1, "Opt-out detection (===false) not found"
+        rollback_block = block[optout_idx:optout_idx + 200]
+        assert "S.messages.pop()" not in rollback_block, (
+            "The slash-command rollback must not use S.messages.pop() — "
+            "use S.messages.length=_lenBefore instead so that a handler "
+            "that pushed an assistant message does not lose it on rollback"
+        )

@@ -45,6 +45,7 @@ from api.config import (
     MAX_FILE_BYTES,
     MAX_UPLOAD_BYTES,
     CHAT_LOCK,
+    _get_session_agent_lock,
     load_settings,
     save_settings,
     set_hermes_default_model,
@@ -234,15 +235,23 @@ def _resolve_compatible_session_model(model_id: str | None) -> tuple[str, bool]:
         if model_provider in {"", "custom", "openrouter"}:
             return model, False
         # Check if any catalog group can actually route this model's prefix.
+        # Use normalized IDs for both the routable set and the group checks
+        # so that e.g. "OpenRouter" or "CUSTOM" provider IDs match correctly.
         groups = catalog.get("groups") or []
-        routable_provider_ids = {
+        normalized_provider_ids = [
             _normalize_provider_id(g.get("provider_id") or "") for g in groups
-        }
+        ]
+        routable_provider_ids = set(normalized_provider_ids)
         # openrouter group can route any provider/model namespace
-        has_openrouter_group = any(
-            (g.get("provider_id") or "") == "openrouter" for g in groups
+        has_openrouter_group = "openrouter" in routable_provider_ids
+        # custom groups are treated as wildcards because their actual routing
+        # capability isn't otherwise visible from the catalog — only bare
+        # "custom" (without a colon suffix like "custom:agent37") is a wildcard,
+        # since suffixed custom providers have known model constraints.
+        has_custom_group = any(
+            (g.get("provider_id") or "").strip().lower() == "custom" for g in groups
         )
-        if model_provider in routable_provider_ids or has_openrouter_group:
+        if model_provider in routable_provider_ids or has_openrouter_group or has_custom_group:
             return model, False
         # Model prefix is not routable — stale cross-provider reference, clear it.
         if default_model:
@@ -975,8 +984,9 @@ def handle_post(handler, parsed) -> bool:
             s = get_session(body["session_id"])
         except KeyError:
             return bad(handler, "Session not found", 404)
-        s.title = str(body["title"]).strip()[:80] or "Untitled"
-        s.save()
+        with _get_session_agent_lock(body["session_id"]):
+            s.title = str(body["title"]).strip()[:80] or "Untitled"
+            s.save()
         return j(handler, {"session": s.compact()})
 
     if parsed.path == "/api/personality/set":
@@ -1019,8 +1029,9 @@ def handle_post(handler, parsed) -> bool:
                 prompt = "\n".join(p for p in parts if p)
             else:
                 prompt = str(value)
-        s.personality = name if name else None
-        s.save()
+        with _get_session_agent_lock(sid):
+            s.personality = name if name else None
+            s.save()
         return j(handler, {"ok": True, "personality": s.personality, "prompt": prompt})
 
     if parsed.path == "/api/session/update":
@@ -1082,10 +1093,11 @@ def handle_post(handler, parsed) -> bool:
             s = get_session(body["session_id"])
         except KeyError:
             return bad(handler, "Session not found", 404)
-        s.messages = []
-        s.tool_calls = []
-        s.title = "Untitled"
-        s.save()
+        with _get_session_agent_lock(body["session_id"]):
+            s.messages = []
+            s.tool_calls = []
+            s.title = "Untitled"
+            s.save()
         return j(handler, {"ok": True, "session": s.compact()})
 
     if parsed.path == "/api/session/truncate":
@@ -1100,8 +1112,9 @@ def handle_post(handler, parsed) -> bool:
         except KeyError:
             return bad(handler, "Session not found", 404)
         keep = int(body["keep_count"])
-        s.messages = s.messages[:keep]
-        s.save()
+        with _get_session_agent_lock(body["session_id"]):
+            s.messages = s.messages[:keep]
+            s.save()
         return j(
             handler, {"ok": True, "session": s.compact() | {"messages": s.messages}}
         )
