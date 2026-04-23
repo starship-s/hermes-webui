@@ -84,6 +84,9 @@ async function populateModelDropdown(){
     if(!data.groups||!data.groups.length) return; // keep HTML defaults
     // Store active provider globally so the send path can warn on mismatch
     window._activeProvider=data.active_provider||null;
+    // Store default model so newSession() can apply it (#872).
+    // Per-page-load — not synced across browser tabs.
+    window._defaultModel=data.default_model||null;
     // Clear existing options
     sel.innerHTML='';
     _dynamicModelLabels={};
@@ -118,72 +121,61 @@ async function populateModelDropdown(){
 // Cache so we don't re-fetch on every page load
 const _liveModelCache={};
 
+function _addLiveModelsToSelect(provider, models, sel){
+  if(!provider||!models||!models.length||!sel) return 0;
+  const currentVal=sel.value;
+  let providerGroup=null;
+  for(const og of sel.querySelectorAll('optgroup')){
+    if(og.dataset.provider&&og.dataset.provider===provider){
+      providerGroup=og; break;
+    }
+    if(og.label&&og.label.toLowerCase().includes(provider.toLowerCase())){
+      providerGroup=og; break;
+    }
+  }
+  if(!providerGroup){
+    providerGroup=document.createElement('optgroup');
+    providerGroup.label=provider.charAt(0).toUpperCase()+provider.slice(1)+' (live)';
+    sel.appendChild(providerGroup);
+  }
+  const existingIds=new Set([...sel.options].map(o=>o.value));
+  let added=0;
+  const _ap=(window._activeProvider||'').toLowerCase();
+  const _isPortalFetch=_ap && _ap!=='openrouter' && _ap!=='custom' && provider===_ap;
+  for(const m of models){
+    let mid=m.id;
+    if(_isPortalFetch && !mid.startsWith('@')){
+      mid=`@${provider}:${mid}`;
+    }
+    if(existingIds.has(mid)) continue;
+    const opt=document.createElement('option');
+    opt.value=mid;
+    opt.textContent=m.label||m.id;
+    opt.title='Live model — fetched from provider';
+    providerGroup.appendChild(opt);
+    _dynamicModelLabels[mid]=m.label||m.id;
+    added++;
+  }
+  if(added>0 && currentVal) _applyModelToDropdown(currentVal, sel);
+  return added;
+}
+
 async function _fetchLiveModels(provider, sel){
   if(!provider||!sel) return;
-  // Don't fetch for providers where we know it's unsupported or unnecessary
-  // All providers now supported via agent's provider_model_ids() — no exclusions needed
-  if(_liveModelCache[provider]) return; // already fetched this session
+  // Already fetched — apply cached models to this select element (#872)
+  if(_liveModelCache[provider]){
+    const added=_addLiveModelsToSelect(provider,_liveModelCache[provider],sel);
+    if(added>0 && typeof syncModelChip==='function') syncModelChip();
+    return;
+  }
   try{
     const url=new URL('api/models/live',location.href);
     url.searchParams.set('provider',provider);
     const data=await fetch(url.href,{credentials:'include'}).then(r=>r.json());
     if(!data.models||!data.models.length) return;
     _liveModelCache[provider]=data.models;
-    // Remember current selection before rebuilding options
-    const currentVal=sel.value;
-    // Rebuild the optgroup for this provider with live models
-    // Keep other providers' optgroups intact
-    let providerGroup=null;
-    for(const og of sel.querySelectorAll('optgroup')){
-      // Prefer exact data-provider match (set from provider_id in API response)
-      // over substring label match — avoids false positives like 'zai' not matching
-      // 'Z.AI / GLM' and vice versa.
-      if(og.dataset.provider&&og.dataset.provider===provider){
-        providerGroup=og; break;
-      }
-      if(og.label&&og.label.toLowerCase().includes(provider.toLowerCase())){
-        providerGroup=og; break;
-      }
-    }
-    if(!providerGroup){
-      // No existing group — add a new one
-      providerGroup=document.createElement('optgroup');
-      providerGroup.label=provider.charAt(0).toUpperCase()+provider.slice(1)+' (live)';
-      sel.appendChild(providerGroup);
-    }
-    // Rebuild options from live data
-    const existingIds=new Set([...sel.options].map(o=>o.value));
-    let added=0;
-    // Apply @provider: prefix to live-fetched model IDs (mirrors the server-side
-    // behaviour for static lists).  Portal providers like Nous return upstream
-    // vendor IDs (e.g. "minimax/minimax-m2.7", "anthropic/claude-opus-4.7") —
-    // without a `@nous:` prefix, `resolve_model_provider()` sees the slash and
-    // mis-routes via OpenRouter → 404.  Prefixing with `@${provider}:` makes
-    // the portal hint explicit so routing honours it (#854).
-    //
-    // Scope: only apply the prefix when this fetch is for the active provider
-    // and that provider is a portal (not OpenRouter / custom, which use bare
-    // or cross-namespace IDs natively).  Skip IDs that already carry an
-    // `@prefix:` — they've already been disambiguated upstream.
-    const _ap=(window._activeProvider||'').toLowerCase();
-    const _isPortalFetch=_ap && _ap!=='openrouter' && _ap!=='custom' && provider===_ap;
-    for(const m of data.models){
-      let mid=m.id;
-      if(_isPortalFetch && !mid.startsWith('@')){
-        mid=`@${provider}:${mid}`;
-      }
-      if(existingIds.has(mid)) continue; // already shown from static list
-      const opt=document.createElement('option');
-      opt.value=mid;
-      opt.textContent=m.label||m.id;
-      opt.title='Live model — fetched from provider';
-      providerGroup.appendChild(opt);
-      _dynamicModelLabels[mid]=m.label||m.id;
-      added++;
-    }
+    const added=_addLiveModelsToSelect(provider,data.models,sel);
     if(added>0){
-      // Restore selection
-      if(currentVal) _applyModelToDropdown(currentVal, sel);
       if(typeof syncModelChip==='function') syncModelChip();
       console.log('[hermes] Live models loaded for',provider+':',added,'new models added');
     }
@@ -630,7 +622,7 @@ function renderMd(raw){
   // Stash <code> tags from the backtick pass above so the outer bold/italic
   // regexes don't esc() their content (e.g. **`code`** → <strong><code>code</code></strong>)
   const _ob_stash=[];
-  s=s.replace(/(<code>[^<]*<\/code>)/g,m=>{_ob_stash.push(m);return `\x00O${_ob_stash.length-1}\x00`;});
+  s=s.replace(/(<code\b[^>]*>[\s\S]*?<\/code>)/g,m=>{_ob_stash.push(m);return `\x00O${_ob_stash.length-1}\x00`;});
   s=s.replace(/\*\*\*(.+?)\*\*\*/g,(_,t)=>`<strong><em>${esc(t)}</em></strong>`);
   s=s.replace(/\*\*(.+?)\*\*/g,(_,t)=>`<strong>${esc(t)}</strong>`);
   s=s.replace(/\*([^*\n]+)\*/g,(_,t)=>`<em>${esc(t)}</em>`);
@@ -1076,6 +1068,10 @@ function dismissReconnect() {
   clearInflight();
 }
 async function refreshSession() {
+  // When the banner is in post-update restart mode, the "Reload" button
+  // should do a full page reload — a session refresh would just 502 while
+  // the server is still restarting.
+  if (window._restartingForUpdate) { location.reload(); return; }
   dismissReconnect();
   if (!S.session) return;
   try {
@@ -1127,10 +1123,10 @@ async function applyUpdates(){
         return;
       }
     }
-    showToast('Updated! Restarting\u2026');
+    showToast('Update applied — restarting…');
     sessionStorage.removeItem('hermes-update-checked');
     sessionStorage.removeItem('hermes-update-dismissed');
-    setTimeout(()=>location.reload(),2500);
+    _waitForServerThenReload();
   }catch(e){
     if(errEl){errEl.textContent='Update failed: '+e.message;errEl.style.display='block';}
     else showToast('Update failed: '+e.message);
@@ -1174,14 +1170,47 @@ async function forceUpdate(btn){
       btn.disabled=false;btn.textContent='Force update';
       return;
     }
-    showToast('Force updated! Restarting\u2026');
+    showToast('Force update applied — restarting…');
     sessionStorage.removeItem('hermes-update-checked');
     sessionStorage.removeItem('hermes-update-dismissed');
-    setTimeout(()=>location.reload(),2500);
+    _waitForServerThenReload();
   }catch(e){
     if(errEl){errEl.textContent='Force update failed: '+e.message;errEl.style.display='block';}
     btn.disabled=false;btn.textContent='Force update';
   }
+}
+
+// Poll /health after an update-triggered restart, then reload.  Replaces the
+// blind setTimeout(reload, 2500) that race-lost against slow hardware or
+// reverse proxies that 502 immediately when the upstream socket closes (#874).
+async function _waitForServerThenReload(opts){
+  opts=opts||{};
+  const interval=opts.interval||500;
+  const maxMs=opts.maxMs||15000;
+  window._restartingForUpdate=true;
+  const msgEl=$('reconnectMsg');
+  const banner=$('reconnectBanner');
+  if(msgEl) msgEl.textContent='⏳ Restarting… please wait';
+  if(banner) banner.classList.add('visible');
+  const deadline=Date.now()+maxMs;
+  // Give the server a moment to actually begin its restart before the first
+  // probe — otherwise the old process may still respond ok on the first poll.
+  await new Promise(r=>setTimeout(r, interval));
+  while(Date.now()<deadline){
+    try{
+      const r=await fetch('/health',{cache:'no-store'});
+      if(r.ok){
+        let data={};
+        try{ data=await r.json(); }catch(_){}
+        if(data && data.status==='ok'){
+          location.reload();
+          return;
+        }
+      }
+    }catch(_){ /* socket closed during restart — retry */ }
+    await new Promise(r=>setTimeout(r, interval));
+  }
+  if(msgEl) msgEl.textContent='⚠️ Server is taking longer than expected — click Reload when ready';
 }
 
 function getPendingSessionMessage(session){
