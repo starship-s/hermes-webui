@@ -575,21 +575,13 @@ def _run_background_title_update(session_id: str, user_text: str, assistant_text
         if not still_auto:
             _put_title_status(put_event, session_id, 'skipped', 'manual_title', current)
             return
-        # Use the configured auxiliary title_generation model when available.
-        # Only fall back to the agent's own model when no dedicated config exists,
-        # preventing e.g. a Chinese chat model from producing Chinese-only titles.
         aux_title_configured = _aux_title_configured()
         if agent and not aux_title_configured:
-            # No dedicated title model — try the agent's model first.
             next_title, llm_status, raw_preview = _generate_llm_session_title_for_agent(agent, user_text, assistant_text)
             if not next_title and llm_status in ('llm_error', 'llm_invalid'):
                 next_title, llm_status, raw_preview = _generate_llm_session_title_via_aux(user_text, assistant_text, agent=agent, use_agent_model=True)
         else:
-            # Dedicated title model configured (or no agent) — use the aux route
-            # with config-based model resolution, not the agent's chat model.
             next_title, llm_status, raw_preview = _generate_llm_session_title_via_aux(user_text, assistant_text)
-            # If aux fails and an agent is available, try the agent as fallback
-            # before dropping to heuristic.
             if not next_title and agent and llm_status in ('llm_error_aux', 'llm_invalid_aux'):
                 next_title, llm_status, raw_preview = _generate_llm_session_title_for_agent(agent, user_text, assistant_text)
         source = llm_status
@@ -601,14 +593,7 @@ def _run_background_title_update(session_id: str, user_text: str, assistant_text
         wrote_title = False
         effective_title = current
         if next_title:
-            # Hold _agent_lock only for in-memory mutation + save so title write
-            # is serialized with checkpoint saves, cancel_stream, and other
-            # session-mutating endpoints. The LLM round-trip above ran outside
-            # the lock to avoid blocking other writers.
             with _get_session_agent_lock(session_id):
-                # Stale-object guard: rebind to the canonical cached Session
-                # instance under LOCK before checking whether a user rename
-                # landed while the LLM title request was in-flight.
                 with LOCK:
                     s = SESSIONS.get(session_id, s)
                     effective_title = str(s.title or '').strip()
