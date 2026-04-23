@@ -2305,6 +2305,7 @@ function finalizeThinkingCard(){
   row.removeAttribute('data-thinking-active');
 }
 function appendThinking(text=''){
+  const oldWait=$('toolRunningRow'); if(oldWait) oldWait.remove();
   $('emptyState').style.display='none';
   let turn=$('liveAssistantTurn');
   if(!turn){
@@ -2322,7 +2323,8 @@ function appendThinking(text=''){
     // Insert after whichever comes last: a live assistant segment or a tool card.
     // This mirrors appendLiveToolCard's anchor logic so thinking always appears
     // in the right position in the interleaved sequence.
-    // Also skip #toolRunningRow (dots) — thinking should go before dots, not after.
+    // Note: toolRunningRow (dots) was already removed at the top of this function,
+    // so the filter clause below is purely defensive against stale DOM artifacts.
     const allChildren=Array.from(blocks.children);
     const anchor=allChildren.filter(el=>
       el.id!=='toolRunningRow' &&
