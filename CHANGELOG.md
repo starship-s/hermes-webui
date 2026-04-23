@@ -29,6 +29,20 @@
   workspace subtree) and never enumerate blocked system roots. (`api/routes.py`,
   `api/workspace.py`, `static/panels.js`, `static/style.css`) (partial for #616)
 
+## [v0.50.179] — 2026-04-23
+
+### Fixed
+- **Onboarding wizard clobbering CLI users' config after server restart** — CLI-configured users (who set up via `hermes model` / `hermes auth`) had no `onboarding_completed` flag in `settings.json`. After a git branch switch or server restart, `verify_hermes_imports()` could momentarily return `imports_ok=False`, making `chat_ready=False` and causing the wizard to reappear with a destructive dropdown default (openrouter). Fixed by writing `onboarding_completed: True` to `settings.json` the first time `config_auto_completed` evaluates to `True`, so the flag survives future transient import failures. (`api/onboarding.py`) Co-authored by @bsgdigital.
+
+## [v0.50.177] — 2026-04-23
+
+### Fixed
+- **Settings dialog and message controls unusable on mobile** — three mobile usability fixes: (1) settings tab strip replaced by a native `<select>` dropdown on narrow viewports, panel goes full-width; (2) provider card Save/Remove buttons become icon-only on mobile so the API key input fills the available width; (3) message timestamps, copy, and edit buttons are always visible on touch screens (no hover state on mobile). (`static/index.html`, `static/panels.js`, `static/style.css`) Co-authored by @bsgdigital.
+## [v0.50.178] — 2026-04-23
+
+### Added
+- **PWA support — installable as a standalone app** — adds a Web App Manifest (`manifest.json`) and a minimal service worker (`sw.js`) with cache-first strategy for app shell assets and network-bypass for all `/api/*` and `/stream` endpoints. Cache name auto-busts on every deploy via git-derived version injection. Enables "Add to Home Screen" on Android, iOS, and desktop Chrome without any offline API response caching (live backend always required). (`static/manifest.json`, `static/sw.js`, `static/index.html`, `api/routes.py`) Closes #685. Co-authored by @bsgdigital.
+
 ## [v0.50.176] — 2026-04-23
 
 ### Fixed
