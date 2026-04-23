@@ -379,7 +379,7 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
         // Render only the text belonging to the current segment (after the last tool call).
         // segmentStart=0 for the first segment, or assistantText.length-at-last-tool for later ones.
         const segText = segmentStart===0
-          ? parsed.displayText                          // first segment: use full display (handles think-tag stripping)
+          ? (renderMd ? renderMd(parsed.displayText) : parsed.displayText)
           : renderMd ? renderMd(assistantText.slice(segmentStart)) : assistantText.slice(segmentStart);
         assistantBody.innerHTML = segText || '';
       }
