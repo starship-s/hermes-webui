@@ -44,15 +44,15 @@ class TestTpsChipI18n:
     def test_tps_chip_label_key_present(self):
         src = _read("static/i18n.js")
         count = src.count("settings_label_tps_chip")
-        assert count >= 2, (
-            f"settings_label_tps_chip must appear in at least 2 locales, found {count}"
+        assert count >= 6, (
+            f"settings_label_tps_chip must appear in all 6 locales, found {count}"
         )
 
     def test_tps_chip_desc_key_present(self):
         src = _read("static/i18n.js")
         count = src.count("settings_desc_tps_chip")
-        assert count >= 2, (
-            f"settings_desc_tps_chip must appear in at least 2 locales, found {count}"
+        assert count >= 6, (
+            f"settings_desc_tps_chip must appear in all 6 locales, found {count}"
         )
 
 
