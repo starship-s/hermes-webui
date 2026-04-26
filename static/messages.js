@@ -4,6 +4,14 @@ function _markSessionViewed(sid, messageCount) {
   _setSessionViewedCount(sid, next);
 }
 
+function _hideTpsChip(){
+  const el=document.getElementById('tpsStat');
+  if(el){
+    el.textContent='0.0 t/s · 0.0 high';
+    el.setAttribute('hidden','');
+  }
+}
+
 async function send(){
   const text=$('msg').value.trim();
   if(!text&&!S.pendingFiles.length)return;
@@ -776,6 +784,7 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
         _markSessionViewed(activeSid, d.session.message_count ?? S.messages.length);
         syncTopbar();renderMessages();loadDir('.');
       }
+      _hideTpsChip();
       _queueDrainSid=activeSid;renderSessionList();setBusy(false);setStatus('');
       setComposerStatus('');
       playNotificationSound();
@@ -828,6 +837,9 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
       // TPS + HIGH/LOW stats for the header chip — emitted at 1 Hz during a stream,
       // silenced entirely when no sessions are active (ticker exits when idle).
       try{
+        if(_terminalStateReached||localStorage.getItem('hermes-show-tps-chip')==='false'){
+          _hideTpsChip();return;
+        }
         const d=JSON.parse(e.data||'{}');
         const el=$('tpsStat');
         if(!el) return;
@@ -835,6 +847,7 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
         const high=typeof d.high==='number' && d.high>=0?d.high.toFixed(1)+' high':'—';
         const low=typeof d.low==='number' && d.low>=0?d.low.toFixed(1)+' low':'';
         el.textContent=`${tps} t/s · ${high}${low?' · '+low:''}`;
+        el.removeAttribute('hidden');
       }catch(_){}
     });
 
@@ -874,6 +887,7 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
         try{const d=JSON.parse(e.data);trackBackgroundError(activeSid,_errTitle,d.message||'Error');}
         catch(_){trackBackgroundError(activeSid,_errTitle,'Error');}
       }
+      _hideTpsChip();
       if(!S.session||!INFLIGHT[S.session.session_id]){setBusy(false);setComposerStatus('');}
       renderSessionList(); // clear streaming indicator immediately on apperror
     });
@@ -954,6 +968,7 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
           }
         }
       })();
+      _hideTpsChip();
       renderSessionList();
       if(!S.session||!INFLIGHT[S.session.session_id]){setBusy(false);setComposerStatus('');}
     });
@@ -1016,6 +1031,7 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
         trackBackgroundError(activeSid,_errTitle,'Connection lost');
       }
     }
+    _hideTpsChip();
     if(!S.session||!INFLIGHT[S.session.session_id]){setBusy(false);setComposerStatus('');}
   }
 

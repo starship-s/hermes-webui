@@ -90,6 +90,7 @@ async function newSession(flash){
   S.activeStreamId=null;
   updateSendBtn();
   const _cb=$('btnCancel');if(_cb)_cb.style.display='none';
+  if(typeof _hideTpsChip==='function') _hideTpsChip();
   setStatus('');
   setComposerStatus('');
   updateQueueBadge(S.session.session_id);
@@ -117,6 +118,7 @@ async function loadSession(sid){
   if (currentSid !== sid) {
     S.messages = [];
     S.toolCalls = [];
+    if(typeof _hideTpsChip==='function') _hideTpsChip();
     const _msgInner = $('msgInner');
     if (_msgInner) _msgInner.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted);font-size:14px;padding:40px;text-align:center;">Loading conversation...</div>';
   }

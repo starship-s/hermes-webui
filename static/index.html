@@ -69,7 +69,7 @@
     </span>
     <span class="app-titlebar-title" id="appTitlebarTitle">Hermes</span>
     <span class="app-titlebar-sub" id="appTitlebarSub" hidden></span>
-    <div class="tps-chip" id="tpsStat" title="Tokens per second / minute">0.0 t/s · 0.0 high</div>
+    <div class="tps-chip" id="tpsStat" hidden title="Live tokens per second for the active stream">0.0 t/s · 0.0 high</div>
   </div>
   <div class="app-titlebar-spacer" aria-hidden="true"></div>
 </header>
@@ -643,6 +643,13 @@
                 <span data-i18n="settings_label_token_usage">Show token usage after responses</span>
               </label>
               <div style="font-size:11px;color:var(--muted);margin-top:4px" data-i18n="settings_desc_token_usage">Displays input/output token count below each assistant reply. Also toggled with <code>/usage</code>.</div>
+            </div>
+            <div class="settings-field">
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+                <input type="checkbox" id="settingsShowTpsChip" style="width:15px;height:15px;accent-color:var(--accent)">
+                <span data-i18n="settings_label_tps_chip">Show response speed in title bar</span>
+              </label>
+              <div style="font-size:11px;color:var(--muted);margin-top:4px" data-i18n="settings_desc_tps_chip">Shows the response speed counter while a reply is streaming. Stored in this browser only.</div>
             </div>
             <div class="settings-field">
               <label for="settingsSidebarDensity" data-i18n="settings_label_sidebar_density">Sidebar density</label>
