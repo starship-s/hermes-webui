@@ -2346,6 +2346,14 @@ async function loadSettingsPanel(){
     }
     const showUsageCb=$('settingsShowTokenUsage');
     if(showUsageCb){showUsageCb.checked=!!settings.show_token_usage;showUsageCb.addEventListener('change',_markSettingsDirty,{once:false});}
+    const tpsCb=$('settingsShowTpsChip');
+    if(tpsCb){
+      tpsCb.checked=localStorage.getItem('hermes-show-tps-chip')!=='false';
+      tpsCb.addEventListener('change',()=>{
+        localStorage.setItem('hermes-show-tps-chip',tpsCb.checked?'true':'false');
+        if(!tpsCb.checked){const el=$('tpsStat');if(el){el.textContent='0.0 t/s · 0.0 high';el.hidden=true;}}
+      },{once:false});
+    }
     const showCliCb=$('settingsShowCliSessions');
     if(showCliCb){showCliCb.checked=!!settings.show_cli_sessions;showCliCb.addEventListener('change',_markSettingsDirty,{once:false});}
     const syncCb=$('settingsSyncInsights');

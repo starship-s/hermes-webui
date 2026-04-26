@@ -9,6 +9,7 @@ async function cancelStream(){
   // closed it won't arrive — so we handle cleanup here as the guaranteed path.
   const btn=$('btnCancel');if(btn)btn.style.display='none';
   S.activeStreamId=null;
+  if(typeof _hideTpsChip==='function') _hideTpsChip();
   setBusy(false);
   if(typeof setComposerStatus==='function') setComposerStatus('');
   else setStatus('');

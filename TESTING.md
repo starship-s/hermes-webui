@@ -12,6 +12,7 @@
 > Run: `pytest tests/ -v --timeout=60`
 >
 > Local regression focus: verify that a previously closed workspace panel stays visually closed from first paint through boot completion on desktop refresh; there should be no brief open-then-close flash.
+> TPS chip regression focus: on a mobile-width viewport, start a long response in session A and confirm the titlebar response-speed counter appears without shifting the titlebar; switch to idle session B and confirm it hides; return to A while streaming and confirm it reappears for A only; after done/cancel/error it hides; disabling Settings → Preferences → Show response speed in title bar hides it immediately and persists after reload.
 
 ---
 

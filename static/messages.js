@@ -214,6 +214,8 @@ async function send(){
 
 const LIVE_STREAMS={};
 
+function _hideTpsChip(){const el=$('tpsStat');if(el){el.textContent='0.0 t/s · 0.0 high';el.hidden=true;}}
+
 function closeLiveStream(sessionId, streamId){
   const live=LIVE_STREAMS[sessionId];
   if(!live) return;
@@ -750,6 +752,7 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
       if(S.session&&S.session.session_id===activeSid){
         S.activeStreamId=null;
         const _cb=$('btnCancel');if(_cb)_cb.style.display='none';
+        _hideTpsChip();
       }
       if(S.session&&S.session.session_id===activeSid){
         S.session=d.session;S.messages=d.session.messages||[];
@@ -788,6 +791,7 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
         const d=JSON.parse(e.data||'{}');
         if((d.session_id||activeSid)!==activeSid) return;
       }catch(_){}
+      if(S.session&&S.session.session_id===activeSid) _hideTpsChip();
       source.close();
     });
 
@@ -825,16 +829,21 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
     });
 
     source.addEventListener('metering',e=>{
-      // TPS + HIGH/LOW stats for the header chip — emitted at 1 Hz during a stream,
-      // silenced entirely when no sessions are active (ticker exits when idle).
+      // TPS chip — show only when: preference is on, the currently viewed session
+      // matches the stream this SSE is attached to, and the event is for this stream.
       try{
+        if(_terminalStateReached||_streamFinalized){_hideTpsChip();return;}
         const d=JSON.parse(e.data||'{}');
+        if(!S.session||S.session.session_id!==activeSid) return;
+        if(d.stream_id!==streamId) return;
+        if(localStorage.getItem('hermes-show-tps-chip')==='false'){_hideTpsChip();return;}
         const el=$('tpsStat');
         if(!el) return;
         const tps=typeof d.tps==='number'?d.tps.toFixed(1):'0.0';
-        const high=typeof d.high==='number' && d.high>=0?d.high.toFixed(1)+' high':'—';
-        const low=typeof d.low==='number' && d.low>=0?d.low.toFixed(1)+' low':'';
-        el.textContent=`${tps} t/s · ${high}${low?' · '+low:''}`;
+        const high=typeof d.high==='number'&&d.high>0?` · ${d.high.toFixed(1)} high`:'';
+        const low=typeof d.low==='number'&&d.low>0?` · ${d.low.toFixed(1)} low`:'';
+        el.textContent=`${tps} t/s${high}${low}`;
+        el.hidden=false;
       }catch(_){}
     });
 
@@ -853,6 +862,7 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
       if(!_clarifySessionId||_clarifySessionId===activeSid) hideClarifyCard(true);
       if(S.session&&S.session.session_id===activeSid){
         S.activeStreamId=null;const _cbe=$('btnCancel');if(_cbe)_cbe.style.display='none';
+        _hideTpsChip();
         clearLiveToolCards();if(!assistantText)removeThinking();
         try{
           const d=JSON.parse(e.data);
@@ -931,6 +941,7 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
       if(!_clarifySessionId||_clarifySessionId===activeSid) hideClarifyCard(true);
       if(S.session&&S.session.session_id===activeSid){
         S.activeStreamId=null;const _cbc=$('btnCancel');if(_cbc)_cbc.style.display='none';
+        _hideTpsChip();
       }
       // Fetch latest session from server to get accurate message list (includes cancel status)
       // This ensures messages stay in sync with server, fixing race condition where local
@@ -971,6 +982,7 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
       if(!_clarifySessionId||_clarifySessionId===activeSid) hideClarifyCard(true);
       if(S.session&&S.session.session_id===activeSid){
         S.activeStreamId=null;const _cbe=$('btnCancel');if(_cbe)_cbe.style.display='none';
+        _hideTpsChip();
         clearLiveToolCards();if(!assistantText)removeThinking();
         S.session=session;S.messages=(session.messages||[]).filter(m=>m&&m.role);
         const hasMessageToolMetadata=S.messages.some(m=>{
@@ -1007,6 +1019,7 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
     if(!_clarifySessionId||_clarifySessionId===activeSid) hideClarifyCard(true);
     if(S.session&&S.session.session_id===activeSid){
       S.activeStreamId=null;const _cbe=$('btnCancel');if(_cbe)_cbe.style.display='none';
+      _hideTpsChip();
       clearLiveToolCards();if(!assistantText)removeThinking();
       S.messages.push({role:'assistant',content:'**Error:** Connection lost'});renderMessages();
       _markSessionViewed(activeSid, S.messages.length);

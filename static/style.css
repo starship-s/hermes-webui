@@ -212,6 +212,7 @@
     font-size:11px;font-family:ui-monospace,'SF Mono',monospace;color:var(--muted);
     white-space:nowrap;letter-spacing:.02em;flex-shrink:0;
   }
+  .tps-chip[hidden]{display:block;visibility:hidden;}
   .app-titlebar-icon{display:inline-flex;align-items:center;color:var(--accent);}
   .app-titlebar-title{font-size:12px;font-weight:600;color:var(--text);letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:60vw;}
   .app-titlebar-sub{font-size:10px;color:var(--muted);background:var(--hover-bg);padding:2px 7px;border-radius:4px;font-family:'SF Mono',ui-monospace,monospace;white-space:nowrap;flex-shrink:0;}

@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Fixed
+- **Titlebar TPS chip now respects session state and user preference** — the live tokens-per-second chip starts visually hidden while preserving the existing titlebar spacing, only shows for the currently viewed streaming session, hides on idle/session switch/done/error/cancel, and can be disabled via a browser-local Settings → Preferences toggle labeled “Show response speed in title bar.” SSE metering now includes per-stream TPS/HIGH/LOW so background sessions do not leak their counter or watermarks into other threads. (`api/metering.py`, `api/streaming.py`, `static/boot.js`, `static/messages.js`, `static/sessions.js`, `static/panels.js`, `static/index.html`, `static/style.css`, `static/i18n.js`)
 
 ## v0.50.221 — 2026-04-26
 

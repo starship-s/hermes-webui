@@ -1148,9 +1148,7 @@ def _run_agent_streaming(session_id, msg_text, model, workspace, stream_id, atta
                 break  # nothing active — stop the ticker
             if _metering_stop.wait(interval):
                 break  # stream was cancelled or ended — exit
-            stats = meter().get_stats()
-            stats['session_id'] = stream_id
-            put('metering', stats)
+            put('metering', meter().get_session_stats(stream_id))
 
     _metering_thread = threading.Thread(target=_metering_ticker, daemon=True)
     _metering_thread.start()
@@ -1306,9 +1304,7 @@ def _run_agent_streaming(session_id, msg_text, model, workspace, stream_id, atta
                 if now - _metering_last_emit[0] < 0.1:
                     return
                 _metering_last_emit[0] = now
-                stats = meter().get_stats()
-                stats['session_id'] = stream_id
-                put('metering', stats)
+                put('metering', meter().get_session_stats(stream_id))
 
             def on_token(text):
                 nonlocal _token_sent
@@ -1955,10 +1951,8 @@ def _run_agent_streaming(session_id, msg_text, model, workspace, stream_id, atta
                 logger.debug("Failed to drain pending steer for session %s", session_id)
             raw_session = s.compact() | {'messages': s.messages, 'tool_calls': tool_calls}
             put('done', {'session': redact_session_data(raw_session), 'usage': usage})
-            # Emit metering stats for the header TPS label
-            meter_stats = meter().get_stats()
-            meter_stats['session_id'] = session_id
-            put('metering', meter_stats)
+            # Emit final metering stats for the header TPS label
+            put('metering', meter().get_session_stats(stream_id))
             if _should_bg_title and _u0 and _a0:
                 threading.Thread(
                     target=_run_background_title_update,
@@ -2101,6 +2095,7 @@ def _run_agent_streaming(session_id, msg_text, model, workspace, stream_id, atta
         if _ckpt_thread is not None:
             _ckpt_thread.join(timeout=15)
         _clear_thread_env()  # TD1: always clear thread-local context
+        meter().end_session(stream_id, 0)
         with STREAMS_LOCK:
             STREAMS.pop(stream_id, None)
             CANCEL_FLAGS.pop(stream_id, None)

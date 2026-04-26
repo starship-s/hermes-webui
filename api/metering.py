@@ -15,9 +15,9 @@ The global tps is the average of all currently active sessions' TPS values.
 This correctly represents the system's real-time capacity regardless of how
 many sessions are running or how long each has been streaming.
 
-For HIGH/LOW tracking, every stats snapshot records the current global tps
-(only when > 0 — idle periods are skipped) into a rolling 60-minute history.
-The max/min of that history gives the peak throughput observed over the past hour.
+For HIGH/LOW tracking, get_stats() keeps the original global 60-minute
+watermarks, while get_session_stats(stream_id) keeps per-stream watermarks for
+the titlebar display. Idle periods are skipped so low does not collapse to 0.
 
 The ticker in streaming.py calls get_interval() — it returns 1.0 when sessions
 are actively receiving tokens so the header updates at 1 Hz, and 10.0 when idle
@@ -33,9 +33,9 @@ Usage from api/streaming.py
 
 The SSE `metering` event payload:
   {
-    "tps": 47.3,    # average TPS across active sessions (real-time)
-    "high": 52.1,   # highest average TPS observed in the past 60 minutes
-    "low":  31.4,   # lowest average TPS (excl. readings < 1 tps, to ignore idle)
+    "tps": 47.3,    # current TPS for this stream in get_session_stats()
+    "high": 52.1,   # highest TPS for this stream in the past 60 minutes
+    "low":  31.4,   # lowest TPS for this stream (excl. readings < 1 tps)
     "active": 1,    # sessions currently streaming
   }
 """
@@ -44,7 +44,7 @@ from __future__ import annotations
 
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 _HOUR_SECS = 3600.0   # rolling window for HIGH/LOW tracking
 _STALE_SECS = 60.0    # consider a session inactive after this
@@ -56,6 +56,7 @@ class _SessionMeter:
     reasoning_tokens: int = 0
     first_token_ts: float = 0.0   # time.monotonic() of first token received
     last_token_ts: float = 0.0    # time.monotonic() of last token received
+    readings: list[tuple[float, float]] = field(default_factory=list)  # per-stream rolling HIGH/LOW history
 
     def total_tokens(self) -> int:
         return self.output_tokens + self.reasoning_tokens
@@ -132,6 +133,37 @@ class GlobalMeter:
     def end_session(self, stream_id: str, final_output_tokens: int, input_tokens: int = 0) -> None:
         with self._lock:
             self._sessions.pop(stream_id, None)
+
+    def get_session_stats(self, stream_id: str) -> dict:
+        """Return stats for one streaming session.
+
+        All display values (`tps`, `high`, and `low`) are scoped to
+        *stream_id* so one active session cannot bleed its live counter or
+        watermarks into another session's titlebar. The `active` count remains
+        global so the frontend can still know how many streams are alive.
+        """
+        stats = self.get_stats()
+        now = time.monotonic()
+        with self._lock:
+            s = self._sessions.get(stream_id)
+            if s is None or s.first_token_ts == 0.0 or (now - s.last_token_ts) > _STALE_SECS:
+                session_tps = 0.0
+                session_high = 0.0
+                session_low = 0.0
+            else:
+                session_tps = s.tps()
+                cutoff = now - _HOUR_SECS
+                s.readings = [(ts, v) for ts, v in s.readings if ts > cutoff]
+                if session_tps > 0:
+                    s.readings.append((now, session_tps))
+                active_readings = [v for _, v in s.readings if v >= 1.0]
+                session_high = max(active_readings) if active_readings else 0.0
+                session_low = min(active_readings) if active_readings else 0.0
+        stats['tps'] = round(session_tps, 1)
+        stats['high'] = round(session_high, 1)
+        stats['low'] = round(session_low, 1)
+        stats['stream_id'] = stream_id
+        return stats
 
     def get_stats(self) -> dict:
         now = time.monotonic()
