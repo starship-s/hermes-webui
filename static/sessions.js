@@ -10,6 +10,11 @@ const ICONS={
   more:'<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" stroke="none"><circle cx="8" cy="3" r="1.25"/><circle cx="8" cy="8" r="1.25"/><circle cx="8" cy="13" r="1.25"/></svg>',
 };
 
+// Tracks which session_id is currently being loaded. Used to discard stale
+// responses from in-flight requests when the user switches sessions again
+// before the first request completes (#1060).
+let _loadingSessionId = null;
+
 const SESSION_VIEWED_COUNTS_KEY = 'hermes-session-viewed-counts';
 let _sessionViewedCounts = null;
 
@@ -93,12 +98,22 @@ async function newSession(flash){
 }
 
 async function loadSession(sid){
+  // Mark this session as the in-flight load. Subsequent loadSession() calls
+  // will overwrite this; stale awaits use the mismatch to bail out (#1060).
+  _loadingSessionId = sid;
   stopApprovalPolling();hideApprovalCard();
   if(typeof stopClarifyPolling==='function') stopClarifyPolling();
   if(typeof hideClarifyCard==='function') hideClarifyCard();
   // Show loading indicator immediately for responsiveness.
   // Cleared by renderMessages() once full session data arrives.
   const currentSid = S.session ? S.session.session_id : null;
+  // Persist the current composer draft before switching away so it can be
+  // restored when the user switches back (#1060).
+  if (currentSid && currentSid !== sid) {
+    if (!S.composerDrafts) S.composerDrafts = {};
+    const draft = { text: ($('msg') || {}).value || '', files: S.pendingFiles ? [...S.pendingFiles] : [] };
+    if (draft.text || draft.files.length) S.composerDrafts[currentSid] = draft;
+  }
   if (currentSid !== sid) {
     S.messages = [];
     S.toolCalls = [];
@@ -120,8 +135,11 @@ async function loadSession(sid){
         if(typeof showToast==='function') showToast('Failed to load session',3000,'error');
       }
     }
+    if (_loadingSessionId === sid) _loadingSessionId = null;
     return;
   }
+  // Stale response? A newer loadSession() call has already started (#1060).
+  if (_loadingSessionId !== sid) return;
   S.session=data.session;
   S.session._modelResolutionDeferred=true;
   S.lastUsage={...(data.session.last_usage||{})};
@@ -162,6 +180,7 @@ async function loadSession(sid){
     const _cb=$('btnCancel');if(_cb&&activeStreamId)_cb.style.display='inline-flex';
     if(INFLIGHT[sid].reattach&&activeStreamId&&typeof attachLiveStream==='function'){
       INFLIGHT[sid].reattach=false;
+      if (_loadingSessionId !== sid) return;
       attachLiveStream(sid, activeStreamId, S.session.pending_attachments||[], {reconnecting:true});
     }
   }else{
@@ -179,8 +198,11 @@ async function loadSession(sid){
         _msgInner.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted);font-size:14px;padding:40px;text-align:center;">Failed to load messages. Try switching sessions or refreshing.</div>';
       }
       if (typeof showToast === 'function') showToast('Failed to load conversation messages', 3000, 'error');
+      if (_loadingSessionId === sid) _loadingSessionId = null;
       return;
     }
+    // Stale? A newer loadSession() call has already started (#1060).
+    if (_loadingSessionId !== sid) return;
 
     // Restore any queued message that survived page refresh via sessionStorage.
     if(typeof queueSessionMessage==='function'){
@@ -260,6 +282,8 @@ async function loadSession(sid){
     });
   }
   _resolveSessionModelForDisplaySoon(sid);
+  // Clear the in-flight session marker now that this load has completed (#1060).
+  if (_loadingSessionId === sid) _loadingSessionId = null;
 }
 
 function _resolveSessionModelForDisplaySoon(sid){
