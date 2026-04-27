@@ -258,7 +258,7 @@ async function cmdWorkspace(args){
     if(!ws){showToast(t('no_workspace_match')+`"${args}"`);return;}
     if(typeof switchToWorkspace==='function') await switchToWorkspace(ws.path, ws.name||ws.path);
     else showToast(t('switched_workspace')+(ws.name||ws.path));
-  }catch(e){showToast(t('workspace_switch_failed')+e.message);}
+  }catch(e){if(e&&e.authRedirect)return;showToast(t('workspace_switch_failed')+e.message);}
 }
 
 async function cmdNew(){
@@ -285,6 +285,7 @@ async function _runManualCompression(focusTopic){
       S.messages=live.session.messages||[];
       S.toolCalls=live.session.tool_calls||[];
     }catch(preflightErr){
+      if(preflightErr&&preflightErr.authRedirect)return;
       if(typeof clearCompressionUi==='function') clearCompressionUi();
       if(typeof _setCompressionSessionLock==='function') _setCompressionSessionLock(null);
       if(typeof setBusy==='function') setBusy(false);
@@ -509,7 +510,7 @@ async function cmdPersonality(args){
       const list=data.personalities.map(p=>`  **${p.name}**${p.description?' — '+p.description:''}`).join('\n');
       S.messages.push({role:'assistant',content:t('available_personalities')+'\n\n'+list+t('personality_switch_hint')});
       renderMessages();
-    }catch(e){showToast(t('personalities_load_failed'));}
+    }catch(e){if(e&&e.authRedirect)return;showToast(t('personalities_load_failed'));}
     return;
   }
   const name=args.trim();
@@ -517,7 +518,7 @@ async function cmdPersonality(args){
     try{
       await api('/api/personality/set',{method:'POST',body:JSON.stringify({session_id:S.session.session_id,name:''})});
       showToast(t('personality_cleared'));
-    }catch(e){showToast(t('failed_colon')+e.message);}
+    }catch(e){if(e&&e.authRedirect)return;showToast(t('failed_colon')+e.message);}
     return;
   }
   try{
@@ -525,7 +526,7 @@ async function cmdPersonality(args){
     S.messages.push({role:'assistant',content:t('personality_set')+`**${name}**`});
     renderMessages();
     showToast(t('personality_set')+name);
-  }catch(e){showToast(t('failed_colon')+e.message);}
+  }catch(e){if(e&&e.authRedirect)return;showToast(t('failed_colon')+e.message);}
 }
 
 async function cmdStop(){
@@ -671,7 +672,7 @@ async function cmdTitle(args){
     showToast(`${t('title_set')} "${S.session.title}"`);
     S.messages.push({role:'assistant',content:`${t('title_set')} **${S.session.title}**`});
     renderMessages();
-  }catch(e){showToast(t('failed_colon')+e.message);}
+  }catch(e){if(e&&e.authRedirect)return;showToast(t('failed_colon')+e.message);}
 }
 async function cmdRetry(){
   if(!S.session){showToast(t('no_active_session'));return;}
@@ -684,7 +685,7 @@ async function cmdRetry(){
     const data=await api('/api/session?session_id='+encodeURIComponent(activeSid));
     if(data&&data.session){S.messages=data.session.messages||[];S.toolCalls=[];if(typeof clearLiveToolCards==='function')clearLiveToolCards();renderMessages();}
     $('msg').value=r.last_user_text||'';if(typeof autoResize==='function')autoResize();await send();
-  }catch(e){showToast(t('retry_failed')+e.message);}
+  }catch(e){if(e&&e.authRedirect)return;showToast(t('retry_failed')+e.message);}
 }
 async function cmdUndo(){
   if(!S.session){showToast(t('no_active_session'));return;}
@@ -697,7 +698,7 @@ async function cmdUndo(){
     const data=await api('/api/session?session_id='+encodeURIComponent(activeSid));
     if(data&&data.session){S.messages=data.session.messages||[];S.toolCalls=[];if(typeof clearLiveToolCards==='function')clearLiveToolCards();renderMessages();}
     showToast(`↩ ${t('undid_n_messages')} ${r.removed_count} ${t('undid_messages_suffix')}`);
-  }catch(e){showToast(t('undo_failed')+e.message);}
+  }catch(e){if(e&&e.authRedirect)return;showToast(t('undo_failed')+e.message);}
 }
 async function undoLastExchange(){await cmdUndo();}
 async function cmdBtw(args){
@@ -713,7 +714,7 @@ async function cmdBtw(args){
     const streamId=r.stream_id;
     const parentSid=r.parent_session_id;
     if(typeof attachBtwStream==='function') attachBtwStream(parentSid,streamId,question);
-  }catch(e){showToast(t('btw_failed')+e.message);}
+  }catch(e){if(e&&e.authRedirect)return;showToast(t('btw_failed')+e.message);}
 }
 async function cmdBackground(args){
   if(!S.session){showToast(t('no_active_session'));return;}
@@ -727,7 +728,7 @@ async function cmdBackground(args){
     // Show background badge and start polling
     if(typeof showBackgroundBadge==='function') showBackgroundBadge(r.task_id);
     if(typeof startBackgroundPolling==='function') startBackgroundPolling(activeSid,r.task_id,prompt);
-  }catch(e){showToast(t('bg_failed')+e.message);}
+  }catch(e){if(e&&e.authRedirect)return;showToast(t('bg_failed')+e.message);}
 }
 async function cmdStatus(){
   if(!S.session){showToast(t('no_active_session'));return;}
@@ -756,7 +757,7 @@ async function cmdStatus(){
     ];
     S.messages.push({role:'assistant',content:lines.join('\n')});
     renderMessages();
-  }catch(e){showToast(t('status_load_failed')+e.message);}
+  }catch(e){if(e&&e.authRedirect)return;showToast(t('status_load_failed')+e.message);}
 }
 function cmdReasoning(args){
   const arg=(args||'').trim().toLowerCase();

@@ -105,7 +105,7 @@ async function send(){
   setComposerStatus(S.pendingFiles&&S.pendingFiles.length?'Uploading…':'');
   let uploaded=[];
   try{uploaded=await uploadPendingFiles();}
-  catch(e){if(!text){setComposerStatus(`Upload error: ${e.message}`);return;}}
+  catch(e){if(e&&e.authRedirect)return;if(!text){setComposerStatus(`Upload error: ${e.message}`);return;}}
 
   const uploadedNames=uploaded.map(u=>u.name||u);
   const uploadedPaths=uploaded.map(u=>u.path||u.name||u);
@@ -176,6 +176,7 @@ async function send(){
     const cancelBtn=$('btnCancel');
     if(cancelBtn) cancelBtn.style.display='inline-flex';
   }catch(e){
+    if(e&&e.authRedirect)return;
     const errMsg=String((e&&e.message)||'');
     const conflictActiveStream=/session already has an active stream/i.test(errMsg);
     if(conflictActiveStream){
@@ -989,7 +990,8 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
             _markSessionViewed(activeSid, data.session.message_count ?? S.messages.length);
             renderMessages();
           }
-        }catch(_){
+        }catch(e){
+          if(e&&e.authRedirect)return;
           // Fallback to local cancel message if API fails
           if(S.session&&S.session.session_id===activeSid){
             clearLiveToolCards();if(!assistantText)removeThinking();

@@ -126,6 +126,7 @@ async function loadSession(sid){
   try {
     data = await api(`/api/session?session_id=${encodeURIComponent(sid)}&messages=0&resolve_model=0`);
   } catch(e) {
+    if(e&&e.authRedirect) return;
     const _msgInner = $('msgInner');
     if(_msgInner){
       if(e.status===404){
@@ -189,6 +190,7 @@ async function loadSession(sid){
     try {
       await _ensureMessagesLoaded(sid);
     } catch (e) {
+      if(e&&e.authRedirect) return;
       // Network errors, server failures, or SSE drops (Chrome error codes 4/5)
       // can cause _ensureMessagesLoaded to throw. Without a try/catch here the
       // "Loading conversation..." div injected at the top of loadSession would
@@ -417,7 +419,7 @@ function _openSessionActionMenu(session, anchorEl){
         session.pinned=newPinned;
         if(S.session&&S.session.session_id===session.session_id) S.session.pinned=newPinned;
         renderSessionList();
-      }catch(err){showToast(t('session_pin_failed')+err.message);}
+      }catch(err){if(err&&err.authRedirect)return;showToast(t('session_pin_failed')+err.message);}
     },
     session.pinned?'is-active':''
   ));
@@ -442,7 +444,7 @@ function _openSessionActionMenu(session, anchorEl){
         if(S.session&&S.session.session_id===session.session_id) S.session.archived=session.archived;
         await renderSessionList();
         showToast(session.archived?t('session_archived'):t('session_restored'));
-      }catch(err){showToast(t('session_archive_failed')+err.message);}
+      }catch(err){if(err&&err.authRedirect)return;showToast(t('session_archive_failed')+err.message);}
     }
   ));
   menu.appendChild(_buildSessionAction(
@@ -459,7 +461,7 @@ function _openSessionActionMenu(session, anchorEl){
           await renderSessionList();
           showToast(t('session_duplicated'));
         }
-      }catch(err){showToast(t('session_duplicate_failed')+err.message);}
+      }catch(err){if(err&&err.authRedirect)return;showToast(t('session_duplicate_failed')+err.message);}
     }
   ));
   menu.appendChild(_buildSessionAction(

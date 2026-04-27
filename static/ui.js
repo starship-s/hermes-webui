@@ -9,10 +9,24 @@ const SESSION_QUEUES={};  // keyed by session_id for queued follow-up turns
 // single-threaded so only one done event fires at a time in practice.
 let _queueDrainSid=null;
 const $=id=>document.getElementById(id);
+class AuthRedirectError extends Error{
+  constructor(){super('Authentication required');this.name='AuthRedirectError';this.authRedirect=true;}
+}
 // Redirect to /login when the server responds with 401 (auth session expired).
 // Handles iOS PWA standalone mode where a server-side 302→/login would break
 // out of the PWA shell into Safari instead of navigating within it.
-function _redirectIfUnauth(res){if(res&&res.status===401){window.location.href='/login?next='+encodeURIComponent(window.location.pathname+window.location.search);return true;}return false;}
+function _redirectToLogin(){
+  const loginUrl=new URL('login',location.href);
+  loginUrl.searchParams.set('next',location.pathname+location.search+location.hash);
+  window.location.href=loginUrl.pathname+loginUrl.search;
+}
+// _redirectIfUnauth uses a boolean return rather than throwing AuthRedirectError
+// because its callers issue a raw fetch() rather than api(), so there is no
+// automatic throw path to hook into.  The contract is intentionally different
+// from api(); callers check `if(_redirectIfUnauth(res)) return;` explicitly.
+// Do not "fix" the asymmetry by making this throw — it would break the upload
+// handler and live-model paths that rely on the boolean result.
+function _redirectIfUnauth(res){if(res&&res.status===401){_redirectToLogin();return true;}return false;}
 function _getSessionQueue(sid, create=false){
   if(!sid) return [];
   if(!SESSION_QUEUES[sid]&&create) SESSION_QUEUES[sid]=[];
@@ -3137,7 +3151,7 @@ function _renderTreeItems(container, entries, depth){
               // Invalidate cache and re-render
               delete S._dirCache[S.currentDir];
               await loadDir(S.currentDir);
-            }catch(err){showToast(t('rename_failed')+err.message);}
+            }catch(err){if(err&&err.authRedirect)return;showToast(t('rename_failed')+err.message);}
           }
         }
         inp.replaceWith(nameEl);
@@ -3225,7 +3239,7 @@ async function deleteWorkspaceFile(relPath, name){
     // Close preview if we just deleted the viewed file
     if($('previewPathText').textContent===relPath)$('btnClearPreview').onclick();
     await loadDir(S.currentDir);
-  }catch(e){setStatus(t('delete_failed')+e.message);}
+  }catch(e){if(e&&e.authRedirect)return;setStatus(t('delete_failed')+e.message);}
 }
 
 async function promptNewFile(){
@@ -3237,7 +3251,7 @@ async function promptNewFile(){
     try{
       const r=await api('/api/session/new',{method:'POST',body:JSON.stringify({workspace:ws})});
       if(r&&r.session){S.session=r.session;S.messages=[];syncTopbar();renderMessages();await renderSessionList();}
-    }catch(e){setStatus(t('create_failed')+e.message);return;}
+    }catch(e){if(e&&e.authRedirect)return;setStatus(t('create_failed')+e.message);return;}
   }
   if(!S.session)return;
   const name=await showPromptDialog({title:t('new_file_prompt'),placeholder:'filename.txt',confirmLabel:t('create')});
@@ -3248,7 +3262,7 @@ async function promptNewFile(){
     showToast(t('created')+name.trim());
     await loadDir(S.currentDir);
     openFile(relPath);
-  }catch(e){setStatus(t('create_failed')+e.message);}
+  }catch(e){if(e&&e.authRedirect)return;setStatus(t('create_failed')+e.message);}
 }
 
 async function promptNewFolder(){
@@ -3259,7 +3273,7 @@ async function promptNewFolder(){
     try{
       const r=await api('/api/session/new',{method:'POST',body:JSON.stringify({workspace:ws})});
       if(r&&r.session){S.session=r.session;S.messages=[];syncTopbar();renderMessages();await renderSessionList();}
-    }catch(e){setStatus(t('folder_create_failed')+e.message);return;}
+    }catch(e){if(e&&e.authRedirect)return;setStatus(t('folder_create_failed')+e.message);return;}
   }
   if(!S.session)return;
   const name=await showPromptDialog({title:t('new_folder_prompt'),placeholder:'folder-name',confirmLabel:t('create')});
@@ -3284,10 +3298,10 @@ async function promptNewFolder(){
           if(typeof _workspaceList!=='undefined')_workspaceList=data.workspaces||_workspaceList||[];
           if(typeof renderWorkspacesPanel==='function')renderWorkspacesPanel(_workspaceList);
           showToast(t('workspace_added'));
-        }catch(e2){setStatus((t('error_prefix')||'Error: ')+e2.message);}
+        }catch(e2){if(e2&&e2.authRedirect)return;setStatus((t('error_prefix')||'Error: ')+e2.message);}
       }
     }
-  }catch(e){setStatus(t('folder_create_failed')+e.message);}
+  }catch(e){if(e&&e.authRedirect)return;setStatus(t('folder_create_failed')+e.message);}
 }
 
 function renderTray(){

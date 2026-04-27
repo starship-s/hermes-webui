@@ -93,6 +93,7 @@ function syncAppTitlebar() {
               body: JSON.stringify({ session_id: S.session.session_id, title: newTitle })
             });
           } catch (err) {
+            if(err&&err.authRedirect)return;
             if (typeof setStatus === 'function') setStatus('Rename failed: ' + err.message);
           }
         }
@@ -298,7 +299,7 @@ async function loadCrons(animate) {
       if (refreshed) _renderCronDetail(refreshed);
       else _clearCronDetail();
     }
-  } catch(e) { box.innerHTML = `<div style="padding:12px;color:var(--accent);font-size:12px">${esc(t('error_prefix'))}${esc(e.message)}</div>`; }
+  } catch(e) { if(e&&e.authRedirect)return; box.innerHTML = `<div style="padding:12px;color:var(--accent);font-size:12px">${esc(t('error_prefix'))}${esc(e.message)}</div>`; }
   finally {
     if (animate && refreshBtn) {
       refreshBtn.style.opacity = '';
@@ -414,7 +415,7 @@ async function _loadCronDetailRuns(jobId){
       </div>`;
     }).join('');
     card.innerHTML = `<div class="detail-card-title">${esc(t('cron_last_output'))}</div>${rows}`;
-  } catch(e) { /* ignore */ }
+  } catch(e) { if(e&&e.authRedirect)return; /* ignore */ }
 }
 
 function openCronDetail(id, el){
@@ -468,7 +469,7 @@ async function deleteCurrentCron(){
     showToast(t('cron_job_deleted'));
     _clearCronDetail();
     await loadCrons();
-  } catch(e) { showToast(t('delete_failed') + e.message, 4000); }
+  } catch(e) { if(e&&e.authRedirect)return; showToast(t('delete_failed') + e.message, 4000); }
 }
 
 let _cronSelectedSkills=[];
@@ -654,6 +655,7 @@ async function saveCronForm(){
     if (newId) openCronDetail(newId);
     else if (_cronList && _cronList.length) openCronDetail(_cronList[_cronList.length - 1].id);
   }catch(e){
+    if(e&&e.authRedirect)return;
     errEl.textContent=t('error_prefix')+e.message;errEl.style.display='';
   }
 }
@@ -675,7 +677,7 @@ async function cronRun(id) {
     await api('/api/crons/run', {method:'POST', body: JSON.stringify({job_id: id})});
     showToast(t('cron_job_triggered'));
     setTimeout(() => { if (_currentCronDetail && _currentCronDetail.id === id) _loadCronDetailRuns(id); }, 5000);
-  } catch(e) { showToast(t('failed_colon') + e.message, 4000); }
+  } catch(e) { if(e&&e.authRedirect)return; showToast(t('failed_colon') + e.message, 4000); }
 }
 
 async function cronPause(id) {
@@ -683,7 +685,7 @@ async function cronPause(id) {
     await api('/api/crons/pause', {method:'POST', body: JSON.stringify({job_id: id})});
     showToast(t('cron_job_paused'));
     await loadCrons();
-  } catch(e) { showToast(t('failed_colon') + e.message, 4000); }
+  } catch(e) { if(e&&e.authRedirect)return; showToast(t('failed_colon') + e.message, 4000); }
 }
 
 async function cronResume(id) {
@@ -691,7 +693,7 @@ async function cronResume(id) {
     await api('/api/crons/resume', {method:'POST', body: JSON.stringify({job_id: id})});
     showToast(t('cron_job_resumed'));
     await loadCrons();
-  } catch(e) { showToast(t('failed_colon') + e.message, 4000); }
+  } catch(e) { if(e&&e.authRedirect)return; showToast(t('failed_colon') + e.message, 4000); }
 }
 
 let _editingCronId = null;
@@ -743,7 +745,7 @@ async function clearConversation() {
     syncTopbar();
     renderMessages();
     showToast(t('conversation_cleared'));
-  } catch(e) { setStatus(t('clear_failed') + e.message); }
+  } catch(e) { if(e&&e.authRedirect)return; setStatus(t('clear_failed') + e.message); }
 }
 
 // ── Skills panel ──
@@ -1547,7 +1549,7 @@ async function deleteCurrentWorkspace(){
     _clearWorkspaceDetail();
     renderWorkspacesPanel(data.workspaces);
     showToast(t('workspace_removed'));
-  }catch(e){setStatus(t('remove_failed')+e.message);}
+  }catch(e){if(e&&e.authRedirect)return;setStatus(t('remove_failed')+e.message);}
 }
 
 function openWorkspaceCreate(){
@@ -1712,7 +1714,7 @@ async function removeWorkspace(path){
     _workspaceList=data.workspaces;
     renderWorkspacesPanel(data.workspaces);
     showToast(t('workspace_removed'));
-  }catch(e){setStatus(t('remove_failed')+e.message);}
+  }catch(e){if(e&&e.authRedirect)return;setStatus(t('remove_failed')+e.message);}
 }
 
 async function promptWorkspacePath(){
@@ -1723,7 +1725,7 @@ async function promptWorkspacePath(){
     try{
       const r=await api('/api/session/new',{method:'POST',body:JSON.stringify({workspace:ws})});
       if(r&&r.session){S.session=r.session;S.messages=[];if(typeof syncTopbar==='function')syncTopbar();if(typeof renderMessages==='function')renderMessages();if(typeof renderSessionList==='function')await renderSessionList();}
-    }catch(e){showToast(t('workspace_switch_failed')+e.message);return;}
+    }catch(e){if(e&&e.authRedirect)return;showToast(t('workspace_switch_failed')+e.message);return;}
     if(!S.session)return;
   }
   const value=await showPromptDialog({
@@ -1742,6 +1744,7 @@ async function promptWorkspacePath(){
     if(!target) throw new Error(t('workspace_not_added'));
     await switchToWorkspace(target.path,target.name);
   }catch(e){
+    if(e&&e.authRedirect)return;
     if(String(e.message||'').includes('Workspace already in list')){
       showToast(t('workspace_already_saved'));
       return;
