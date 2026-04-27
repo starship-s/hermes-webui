@@ -1706,6 +1706,12 @@ Each has automated API-level tests in `tests/test_sprint{N}.py`.
 - "Sign Out" button visible when auth active. Click → redirected to /login.
 - API calls without auth cookie → 401 JSON response.
 - Check response headers: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`.
+- Expired session (cookie valid but server session gone): any API call returns 401 → page
+  navigates to `/login?next=<current-path>`. The app does **not** show a stale error message
+  before navigating; it stops cleanly. On return from login, `?next=` restores the original URL.
+- Automated: `pytest tests/test_auth_redirect_js_behaviour.py -v` (requires `node` on PATH;
+  skipped automatically without it). Covers 401 rejection, subpath-mount redirect URLs, and
+  transparent HTML redirect detection.
 
 ### Sprint 20: Voice Input + Send Button
 - Mic button visible in composer (Chrome/Edge). Hidden in Firefox.
