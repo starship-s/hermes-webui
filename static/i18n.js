@@ -673,7 +673,7 @@ const LOCALES = {
     yolo_pill_label: 'YOLO',
     yolo_pill_title_active: 'YOLO mode active — click to disable',
     approval_skip_all: '⚡ Skip all this session',
-    approval_skip_all_title: 'Skip all approval prompts for this session'
+    approval_skip_all_title: 'Skip all approval prompts for this session',
     // composer action tooltips
     composer_send: 'Send message',
     composer_queue: 'Queue message',
@@ -1919,7 +1919,7 @@ const LOCALES = {
     yolo_pill_label: 'YOLO',
     yolo_pill_title_active: 'Modo YOLO activo — haz clic para desactivar',
     approval_skip_all: '⚡ Saltar todo en esta sesión',
-    approval_skip_all_title: 'Saltar todas las solicitudes de aprobación en esta sesión'
+    approval_skip_all_title: 'Saltar todas las solicitudes de aprobación en esta sesión',
     // composer action tooltips
     composer_send: 'Enviar mensaje',
     composer_queue: 'Poner en cola',
@@ -2313,7 +2313,7 @@ const LOCALES = {
     yolo_pill_label: 'YOLO',
     yolo_pill_title_active: 'YOLO-Modus aktiv — Klicken zum Deaktivieren',
     approval_skip_all: '⚡ Alle in dieser Sitzung überspringen',
-    approval_skip_all_title: 'Alle Genehmigungsanfragen in dieser Sitzung überspringen'
+    approval_skip_all_title: 'Alle Genehmigungsanfragen in dieser Sitzung überspringen',
     // composer action tooltips
     composer_send: 'Nachricht senden',
     composer_queue: 'Nachricht einreihen',
@@ -3598,7 +3598,7 @@ const LOCALES = {
     yolo_pill_label: 'YOLO',
     yolo_pill_title_active: 'YOLO 模式激活 — 點擊關閉',
     approval_skip_all: '⚡ 本次工作階段全部跳過',
-    approval_skip_all_title: '跳過本次工作階段的所有審批提示'
+    approval_skip_all_title: '跳過本次工作階段的所有審批提示',
     // composer action tooltips
     composer_send: '\u50b3\u9001\u8a0a\u606f',
     composer_queue: '\u8a0a\u606f\u52a0\u5165\u4f47\u5217',
