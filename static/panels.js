@@ -2011,6 +2011,16 @@ window.addEventListener('resize',()=>{
 async function switchToProfile(name) {
   if (S.busy) { showToast(t('profiles_busy_switch')); return; }
 
+  // ── Loading indicator ───────────────────────────────────────────────────
+  // Show spinner on the profile chip immediately so the user gets visual
+  // feedback while the async switch is in progress.
+  const _chip = $('profileChip');
+  const _chipLabel = $('profileChipLabel');
+  const _prevProfileName = S.activeProfile || 'default';
+  if (_chip) { _chip.classList.add('switching'); _chip.disabled = true; }
+  // Optimistic name update — shows the target name right away
+  if (_chipLabel) _chipLabel.textContent = name;
+
   // Determine whether the current session has any messages.
   // A session with messages is "in progress" and belongs to the current profile —
   // we must not retag it.  We'll start a fresh session for the new profile instead.
@@ -2020,10 +2030,15 @@ async function switchToProfile(name) {
     const data = await api('/api/profile/switch', { method: 'POST', body: JSON.stringify({ name }) });
     S.activeProfile = data.active || name;
 
-    // ── Model ──────────────────────────────────────────────────────────────
+    // ── Model + Workspace (parallelized) ───────────────────────────────────
+    // populateModelDropdown hits /api/models; loadWorkspaceList hits /api/workspaces.
+    // They are fully independent — run both simultaneously to cut switch time ~50%.
     localStorage.removeItem('hermes-webui-model');
     _skillsData = null;
-    await populateModelDropdown();
+    _workspaceList = null;
+    await Promise.all([populateModelDropdown(), loadWorkspaceList()]);
+
+    // ── Apply model ────────────────────────────────────────────────────────
     if (data.default_model) {
       const sel = $('modelSelect');
       const resolved = _applyModelToDropdown(data.default_model, sel);
@@ -2035,9 +2050,7 @@ async function switchToProfile(name) {
       }
     }
 
-    // ── Workspace ──────────────────────────────────────────────────────────
-    _workspaceList = null;
-    await loadWorkspaceList();
+    // ── Apply workspace ────────────────────────────────────────────────────
     if (data.default_workspace) {
       // Always store the persistent profile default — used for blank-page display
       // and workspace auto-bind throughout the session lifecycle (#804, #823).
@@ -2099,7 +2112,14 @@ async function switchToProfile(name) {
     // Update composer placeholder and title bar to reflect profile name
     if (typeof applyBotName === 'function') applyBotName();
 
-  } catch (e) { showToast(t('switch_failed') + e.message); }
+  } catch (e) {
+    // Revert the optimistic name update on error
+    if (_chipLabel) _chipLabel.textContent = _prevProfileName;
+    showToast(t('switch_failed') + e.message);
+  } finally {
+    // Always remove loading indicator regardless of success or failure
+    if (_chip) { _chip.classList.remove('switching'); _chip.disabled = false; }
+  }
 }
 
 function openProfileCreate(){
@@ -2542,7 +2562,7 @@ async function loadProvidersPanel(){
   if(!list) return;
   try{
     const data=await api('/api/providers');
-    const providers=(data.providers||[]).filter(p=>p.configurable);
+    const providers=(data.providers||[]).filter(p=>p.configurable||p.is_oauth);
     list.innerHTML='';
     _providerCardEls.clear();
     if(providers.length===0){
@@ -2564,11 +2584,15 @@ function _buildProviderCard(p){
   const card=document.createElement('div');
   card.className='provider-card';
   card.dataset.provider=p.id;
-  const isOauth=p.key_source==='oauth';
+  // Use the is_oauth flag from the backend — it reflects _OAUTH_PROVIDERS in providers.py.
+  // key_source can be 'oauth' (hermes auth), 'config_yaml' (token in config.yaml), or 'none'.
+  const isOauth=p.is_oauth===true;
   const modelCount=Array.isArray(p.models)?p.models.length:0;
-  const sourceLabel=isOauth
+  const sourceLabel=p.key_source==='oauth'
     ? t('providers_status_oauth')
-    : (p.has_key ? t('providers_status_api_key') : t('providers_status_not_configured_label'));
+    : p.key_source==='config_yaml'
+      ? t('providers_status_configured')||'Configured'
+      : (p.has_key ? t('providers_status_api_key') : t('providers_status_not_configured_label'));
   const metaParts=[];
   if(modelCount>0) metaParts.push(modelCount+(modelCount===1?' model':' models'));
   metaParts.push(sourceLabel);
@@ -2594,7 +2618,17 @@ function _buildProviderCard(p){
   if(isOauth){
     const hint=document.createElement('div');
     hint.className='provider-card-hint';
-    hint.textContent=t('providers_oauth_hint');
+    if(p.key_source==='config_yaml'){
+      hint.textContent=t('providers_oauth_config_yaml_hint')||'Token configured via config.yaml. To update, edit the providers section in your config.yaml or run hermes auth.';
+    } else if(p.auth_error){
+      hint.textContent=p.auth_error;
+      hint.style.color='var(--accent)';
+    } else if(p.has_key){
+      hint.textContent=t('providers_oauth_hint');
+    } else {
+      hint.textContent=t('providers_oauth_not_configured_hint')||'Not authenticated. Run hermes auth in the terminal to configure this provider.';
+      hint.style.color='var(--muted)';
+    }
     body.appendChild(hint);
     card.appendChild(body);
     header.addEventListener('click',()=>card.classList.toggle('open'));
