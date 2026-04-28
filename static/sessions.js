@@ -182,7 +182,6 @@ async function loadSession(sid){
     if(typeof startClarifyPolling==='function') startClarifyPolling(sid);
     if(typeof _fetchYoloState==='function') _fetchYoloState(sid);
     S.activeStreamId=activeStreamId;
-    const _cb=$('btnCancel');if(_cb&&activeStreamId)_cb.style.display='inline-flex';
     if(INFLIGHT[sid].reattach&&activeStreamId&&typeof attachLiveStream==='function'){
       INFLIGHT[sid].reattach=false;
       if (_loadingSessionId !== sid) return;
@@ -251,7 +250,6 @@ async function loadSession(sid){
       S.busy=true;
       S.activeStreamId=activeStreamId;
       updateSendBtn();
-      const _cb=$('btnCancel');if(_cb)_cb.style.display='inline-flex';
       setStatus('');
       setComposerStatus('');
       syncTopbar();renderMessages();appendThinking();loadDir('.');
