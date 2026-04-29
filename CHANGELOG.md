@@ -4,6 +4,7 @@
 
 ### Fixed
 - **Compaction preserves visible prompts** — WebUI now keeps model-facing compacted context separately from the visible transcript, so automatic context compaction no longer replaces earlier user prompts in the scrollback. (`api/models.py`, `api/streaming.py`, `api/routes.py`) @franksong2702 — Closes #1217
+- **MiniMax China provider visible in model picker** — `MINIMAX_CN_API_KEY` now maps to the `minimax-cn` provider instead of being collapsed into global `minimax`; WebUI includes a static MiniMax (China) model catalog/display label so `providers.minimax-cn: {}` can render a populated picker group. (`api/config.py`, `api/providers.py`) @franksong2702 — Closes #1236
 
 ## [v0.50.237] — 2026-04-29
 

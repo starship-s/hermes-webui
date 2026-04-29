@@ -536,6 +536,7 @@ _PROVIDER_DISPLAY = {
     "kimi-coding": "Kimi / Moonshot",
     "deepseek": "DeepSeek",
     "minimax": "MiniMax",
+    "minimax-cn": "MiniMax (China)",
     "google": "Google",
     "meta-llama": "Meta Llama",
     "huggingface": "HuggingFace",
@@ -581,6 +582,8 @@ _PROVIDER_ALIASES = {
     "claude": "anthropic",
     "claude-code": "anthropic",
     "deep-seek": "deepseek",
+    "minimax-china": "minimax-cn",
+    "minimax_cn": "minimax-cn",
     "opencode": "opencode-zen",
     "grok": "xai",
     "x-ai": "xai",
@@ -687,6 +690,12 @@ _PROVIDER_MODELS = {
         {"id": "MiniMax-M2.5", "label": "MiniMax M2.5"},
         {"id": "MiniMax-M2.5-highspeed", "label": "MiniMax M2.5 Highspeed"},
         {"id": "MiniMax-M2.1", "label": "MiniMax M2.1"},
+    ],
+    "minimax-cn": [
+        {"id": "MiniMax-M2.7", "label": "MiniMax M2.7"},
+        {"id": "MiniMax-M2.5", "label": "MiniMax M2.5"},
+        {"id": "MiniMax-M2.1", "label": "MiniMax M2.1"},
+        {"id": "MiniMax-M2", "label": "MiniMax M2"},
     ],
     # GitHub Copilot — model IDs served via the Copilot API
     "copilot": [
@@ -1574,8 +1583,10 @@ def get_available_models() -> dict:
                 detected_providers.add("zai")
             if all_env.get("KIMI_API_KEY"):
                 detected_providers.add("kimi-coding")
-            if all_env.get("MINIMAX_API_KEY") or all_env.get("MINIMAX_CN_API_KEY"):
+            if all_env.get("MINIMAX_API_KEY"):
                 detected_providers.add("minimax")
+            if all_env.get("MINIMAX_CN_API_KEY"):
+                detected_providers.add("minimax-cn")
             if all_env.get("DEEPSEEK_API_KEY"):
                 detected_providers.add("deepseek")
             if all_env.get("XAI_API_KEY"):
