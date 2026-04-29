@@ -5,6 +5,7 @@
 ### Fixed
 - **Compaction preserves visible prompts** — WebUI now keeps model-facing compacted context separately from the visible transcript, so automatic context compaction no longer replaces earlier user prompts in the scrollback. (`api/models.py`, `api/streaming.py`, `api/routes.py`) @franksong2702 — Closes #1217
 - **MiniMax China provider visible in model picker** — `MINIMAX_CN_API_KEY` now maps to the `minimax-cn` provider instead of being collapsed into global `minimax`; WebUI includes a static MiniMax (China) model catalog/display label so `providers.minimax-cn: {}` can render a populated picker group. (`api/config.py`, `api/providers.py`) @franksong2702 — Closes #1236
+- **Embedded terminal resize and collapse controls restored** — restores the collapse/expand dock markup and controlled height CSS variable lost during the v0.50.237 batch integration, and reinstates regression coverage for terminal resizing and collapsed-state behavior. (`static/index.html`, `static/style.css`, `static/terminal.js`, `tests/test_embedded_workspace_terminal.py`) @franksong2702
 
 ## [v0.50.237] — 2026-04-29
 
