@@ -121,7 +121,12 @@ def test_non_compression_state_db_parent_does_not_create_sidebar_lineage(_isolat
 
         rows = {row["session_id"]: row for row in all_sessions()}
 
-        assert rows["lineage_api_plain_child"].get("parent_session_id") == "lineage_api_plain_parent"
+        # parent_session_id must NOT be exposed when the parent's end_reason
+        # is not a continuation (compression / cli_close). The frontend's
+        # _sessionLineageKey would otherwise group two children sharing a
+        # `user_stop` parent under the same key — incorrect collapse.
+        # (Tightened in v0.50.251 per Opus SHOULD-FIX 1.)
+        assert "parent_session_id" not in rows["lineage_api_plain_child"]
         assert "_lineage_root_id" not in rows["lineage_api_plain_child"]
     finally:
         conn.close()

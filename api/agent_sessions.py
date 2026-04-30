@@ -291,6 +291,15 @@ def read_session_lineage_metadata(db_path: Path, session_ids: list[str] | set[st
             # Fetch the wanted ids first, then chase parent_session_id chains
             # in batches until no new ids appear. Each batch hits PRIMARY KEY
             # so it's effectively O(N) lookups.
+            #
+            # IN-clause is chunked to 500 to stay under SQLITE_MAX_VARIABLE_NUMBER
+            # on older sqlite (Python 3.9 ships sqlite 3.31 which defaults to 999;
+            # newer Python ships sqlite 3.32+ at 32766). On a power user with
+            # 2000+ sessions in the sidebar, an unchunked first hop would raise
+            # `OperationalError: too many SQL variables`, get swallowed by the
+            # except below, and silently disable lineage collapse forever.
+            # (Opus pre-release review of v0.50.251, SHOULD-FIX 2.)
+            IN_CHUNK = 500
             rows: dict[str, dict] = {}
             to_fetch = set(wanted)
             # Cap walk depth to bound worst-case query count. Real lineage
@@ -299,15 +308,17 @@ def read_session_lineage_metadata(db_path: Path, session_ids: list[str] | set[st
             for _hop in range(20):
                 if not to_fetch:
                     break
-                placeholders = ','.join('?' * len(to_fetch))
                 fetch_list = list(to_fetch)
                 to_fetch = set()
-                cur.execute(
-                    f"SELECT id, parent_session_id, end_reason FROM sessions WHERE id IN ({placeholders})",
-                    fetch_list,
-                )
-                for row in cur.fetchall():
-                    rows[row['id']] = dict(row)
+                for i in range(0, len(fetch_list), IN_CHUNK):
+                    chunk = fetch_list[i:i + IN_CHUNK]
+                    placeholders = ','.join('?' * len(chunk))
+                    cur.execute(
+                        f"SELECT id, parent_session_id, end_reason FROM sessions WHERE id IN ({placeholders})",
+                        chunk,
+                    )
+                    for row in cur.fetchall():
+                        rows[row['id']] = dict(row)
                 # Queue up parents we haven't fetched yet.
                 for sid in fetch_list:
                     parent_id = rows.get(sid, {}).get('parent_session_id')
@@ -323,13 +334,19 @@ def read_session_lineage_metadata(db_path: Path, session_ids: list[str] | set[st
             continue
 
         parent_id = row.get('parent_session_id')
-        # Only expose parent_session_id when the parent actually exists in
-        # state.db. Orphan references (parent row was pruned/deleted) used to
-        # leak through and the frontend would treat them as a sidebar
-        # grouping key (#1358's _sessionLineageKey falls through to
-        # parent_session_id when _lineage_root_id is missing). Caught during
-        # pre-release review of v0.50.251.
-        if parent_id and parent_id in rows:
+        # Only expose parent_session_id when:
+        #   1) the parent actually exists in state.db (orphan refs would
+        #      otherwise leak through and the frontend would treat them as
+        #      sidebar grouping keys via #1358's _sessionLineageKey
+        #      fall-through)
+        #   2) the parent's end_reason is one of {compression, cli_close} —
+        #      i.e. only TRUE continuations. Without this, two distinct
+        #      WebUI sessions sharing a `user_stop` parent would get
+        #      collapsed into a single sidebar row by #1358's helper
+        #      (it groups by parent_session_id as the third-fallback key).
+        # (Opus pre-release review of v0.50.251, SHOULD-FIX 1.)
+        parent_row = rows.get(parent_id) if parent_id else None
+        if parent_row and parent_row.get('end_reason') in {'compression', 'cli_close'}:
             metadata.setdefault(sid, {})['parent_session_id'] = parent_id
 
         root_id = sid

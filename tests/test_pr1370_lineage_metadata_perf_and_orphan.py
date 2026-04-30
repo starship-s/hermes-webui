@@ -180,10 +180,97 @@ def test_chain_walk_returns_correct_root_for_real_compression_chain(tmp_path):
     assert result["tip"]["parent_session_id"] == "seg3"
 
 
+def test_in_clause_chunked_for_large_session_set(tmp_path, monkeypatch):
+    """The first hop must chunk the IN clause into batches of <= 500.
+    Without chunking, a power user with 2000+ sessions in the sidebar would
+    trigger SQLITE_MAX_VARIABLE_NUMBER on Python 3.9's sqlite 3.31 (default
+    limit 999), the OperationalError gets swallowed by the except wrapper,
+    and lineage collapse silently disables forever for that user.
+    (Opus pre-release review of v0.50.251, SHOULD-FIX 2.)
+    """
+    from api import agent_sessions
+
+    db = tmp_path / "state.db"
+    conn = _make_db(db)
+    # 1500 unrelated rows
+    for i in range(1500):
+        _insert(conn, f"session_{i:04d}")
+    conn.close()
+
+    # Track each query's IN clause variable count
+    in_counts = []
+    real_connect = sqlite3.connect
+
+    class _TrackingConn:
+        def __init__(self, *args, **kw):
+            self._real = real_connect(*args, **kw)
+        def cursor(self):
+            return _TrackingCursor(self._real.cursor())
+        def __enter__(self): return self
+        def __exit__(self, *a): return self._real.__exit__(*a)
+        @property
+        def row_factory(self): return self._real.row_factory
+        @row_factory.setter
+        def row_factory(self, v): self._real.row_factory = v
+
+    class _TrackingCursor:
+        def __init__(self, real): self._real = real
+        def execute(self, sql, *args):
+            if "IN (" in sql:
+                in_counts.append(sql.count("?"))
+            return self._real.execute(sql, *args)
+        def fetchall(self): return self._real.fetchall()
+        def fetchone(self): return self._real.fetchone()
+
+    monkeypatch.setattr(sqlite3, "connect", _TrackingConn)
+
+    # Request 1500 ids (the full set we inserted)
+    wanted = [f"session_{i:04d}" for i in range(1500)]
+    agent_sessions.read_session_lineage_metadata(db, wanted)
+
+    assert in_counts, "Expected at least one IN-clause query"
+    over_limit = [n for n in in_counts if n > 999]
+    assert not over_limit, (
+        f"IN clause must be chunked to <= 999 vars to stay under SQLite default "
+        f"limit (chunked to 500 in the implementation). Found queries with "
+        f"{over_limit} variables — would raise OperationalError on older sqlite."
+    )
+
+
+def test_two_children_sharing_non_continuation_parent_not_collapsed(tmp_path):
+    """The contract Opus flagged: when two distinct WebUI sessions share the
+    same parent and that parent's end_reason is NOT compression/cli_close
+    (e.g. 'user_stop'), neither child should expose parent_session_id.
+    The frontend's #1358 lineage helper would otherwise group them under
+    the parent's id key and incorrectly collapse the rows.
+    """
+    from api.agent_sessions import read_session_lineage_metadata
+
+    db = tmp_path / "state.db"
+    conn = _make_db(db)
+    _insert(conn, "shared_parent", end_reason="user_stop")
+    _insert(conn, "child_a", parent="shared_parent", end_reason=None)
+    _insert(conn, "child_b", parent="shared_parent", end_reason=None)
+    conn.close()
+
+    result = read_session_lineage_metadata(db, ["child_a", "child_b"])
+    # Neither child should expose parent_session_id (would let frontend
+    # group them under the same key and collapse one)
+    for sid in ["child_a", "child_b"]:
+        entry = result.get(sid, {})
+        assert "parent_session_id" not in entry, (
+            f"{sid} leaked parent_session_id despite parent being non-continuation"
+        )
+
+
 def test_non_compression_parent_does_not_extend_lineage(tmp_path):
     """If parent's end_reason is something OTHER than 'compression' or
     'cli_close' (e.g. 'user_stop', 'session_reset', 'cron_complete'),
-    the chain stops at that boundary."""
+    the chain stops at that boundary AND parent_session_id is not exposed
+    (tightened in v0.50.251 per Opus SHOULD-FIX 1 — exposing the parent
+    ref would let the frontend group two children sharing the same
+    non-continuation parent into a single sidebar row).
+    """
     from api.agent_sessions import read_session_lineage_metadata
 
     db = tmp_path / "state.db"
@@ -193,8 +280,11 @@ def test_non_compression_parent_does_not_extend_lineage(tmp_path):
     conn.close()
 
     result = read_session_lineage_metadata(db, ["child"])
-    # parent_session_id should still be exposed (parent exists)
-    assert result["child"]["parent_session_id"] == "parent"
-    # But _lineage_root_id should NOT be set — chain doesn't span the boundary
-    assert "_lineage_root_id" not in result["child"]
-    assert "_compression_segment_count" not in result["child"]
+    # parent_session_id must NOT be exposed (parent's end_reason is non-continuation)
+    assert "child" not in result or "parent_session_id" not in result["child"], (
+        "parent_session_id leaked through despite parent's end_reason being "
+        "'user_stop' — would cause incorrect sidebar collapse."
+    )
+    # _lineage_root_id should NOT be set — chain doesn't span the boundary
+    assert "child" not in result or "_lineage_root_id" not in result["child"]
+    assert "child" not in result or "_compression_segment_count" not in result["child"]
