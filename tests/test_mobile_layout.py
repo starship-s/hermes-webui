@@ -18,10 +18,101 @@ Run as part of the standard test suite:
 
 import pathlib
 import re
+from html.parser import HTMLParser
 
 REPO = pathlib.Path(__file__).parent.parent
 HTML = (REPO / "static" / "index.html").read_text(encoding="utf-8")
 CSS  = (REPO / "static" / "style.css").read_text(encoding="utf-8")
+
+
+def _max_width_media_blocks(width_px):
+    """Return all @media(max-width:Npx) bodies using balanced braces."""
+    pattern = re.compile(rf'@media\s*\(\s*max-width\s*:\s*{width_px}px\s*\)\s*\{{')
+    blocks = []
+    for match in pattern.finditer(CSS):
+        open_brace = match.end() - 1
+        depth = 0
+        for idx in range(open_brace, len(CSS)):
+            if CSS[idx] == "{":
+                depth += 1
+            elif CSS[idx] == "}":
+                depth -= 1
+                if depth == 0:
+                    blocks.append(CSS[open_brace + 1:idx])
+                    break
+    return blocks
+
+
+def _composer_phone_media_block():
+    for block in _max_width_media_blocks(640):
+        if ".composer-footer" in block:
+            return block
+    raise AssertionError("Missing composer rules in @media(max-width:640px)")
+
+
+def _strip_css_comments(css):
+    return re.sub(r'/\*.*?\*/', '', css, flags=re.DOTALL)
+
+
+def _rule_body(css, selector):
+    for match in re.finditer(r'([^{}]+)\{([^{}]*)\}', _strip_css_comments(css)):
+        selectors = {part.strip() for part in match.group(1).split(",")}
+        if selector in selectors:
+            return match.group(2)
+    raise AssertionError(f"Missing CSS rule for {selector}")
+
+
+def _declarations(rule_body):
+    declarations = {}
+    for item in rule_body.split(";"):
+        if ":" not in item:
+            continue
+        prop, value = item.split(":", 1)
+        declarations[prop.strip()] = re.sub(r'\s+', ' ', value.strip())
+    return declarations
+
+
+class _ComposerLeftDropdownParser(HTMLParser):
+    _VOID_TAGS = {
+        "area", "base", "br", "col", "embed", "hr", "img", "input",
+        "link", "meta", "param", "source", "track", "wbr",
+    }
+
+    def __init__(self):
+        super().__init__()
+        self.stack = []
+        self.violations = []
+
+    def handle_starttag(self, tag, attrs):
+        self._handle_element(tag, attrs, push=True)
+
+    def handle_startendtag(self, tag, attrs):
+        self._handle_element(tag, attrs, push=False)
+
+    def handle_endtag(self, tag):
+        tag = tag.lower()
+        for idx in range(len(self.stack) - 1, -1, -1):
+            if self.stack[idx]["tag"] == tag:
+                del self.stack[idx:]
+                break
+
+    def _handle_element(self, tag, attrs, push):
+        tag = tag.lower()
+        attrs = dict(attrs)
+        classes = set((attrs.get("class") or "").split())
+        element_id = attrs.get("id") or ""
+        inside_composer_left = any(
+            "composer-left" in item["classes"] for item in self.stack
+        )
+        is_dropdown = (
+            element_id.endswith("Dropdown") or
+            any("dropdown" in class_name for class_name in classes)
+        )
+        if inside_composer_left and is_dropdown:
+            label = f"#{element_id}" if element_id else "." + ".".join(sorted(classes))
+            self.violations.append(label)
+        if push and tag not in self._VOID_TAGS:
+            self.stack.append({"tag": tag, "classes": classes})
 
 
 # ── Mobile breakpoint rules ───────────────────────────────────────────────────
@@ -243,9 +334,9 @@ def test_sidebar_nav_present():
 
 def test_mobile_does_not_hide_sidebar_nav():
     """Phone breakpoint must keep the sidebar top navigation visible."""
-    mobile_block = re.search(r'@media\(max-width:640px\)\{(.*)\n\s*\}', CSS, re.DOTALL)
-    assert mobile_block, "Missing @media(max-width:640px) block in style.css"
-    assert ".sidebar-nav{display:none" not in mobile_block.group(1).replace(" ", ""), \
+    mobile_css = "\n".join(_max_width_media_blocks(640))
+    assert mobile_css, "Missing @media(max-width:640px) block in style.css"
+    assert ".sidebar-nav{display:none" not in mobile_css.replace(" ", ""), \
         ".sidebar-nav must stay visible on mobile"
 
 
@@ -278,6 +369,20 @@ def test_profile_dropdown_not_clipped_by_overflow():
     if m:
         assert int(m.group(1)) >= 100, \
             f".profile-dropdown z-index {m.group(1)} is too low — must be >= 100 to clear topbar"
+
+
+def test_composer_dropdowns_are_not_nested_inside_left_control_row():
+    """Composer dropdown surfaces should remain outside .composer-left.
+
+    The left row can wrap/scroll on phones; dropdowns need to be siblings so
+    that overflow rules on the control row cannot clip them.
+    """
+    parser = _ComposerLeftDropdownParser()
+    parser.feed(HTML)
+    assert not parser.violations, (
+        "Composer dropdowns must not be nested inside .composer-left: "
+        + ", ".join(parser.violations)
+    )
 
 
 def test_topbar_chips_mobile_overflow():
@@ -404,6 +509,42 @@ def test_100dvh_viewport_height():
         "style.css must use 100dvh for correct mobile viewport height (100vh hides content under address bar)"
 
 
+def test_titlebar_safe_area_top_not_double_counted_in_browser_viewport():
+    """The base titlebar must not always add env(safe-area-inset-top).
+
+    Normal mobile browsers and webview wrappers already lay out the page below
+    their own chrome/status area. Applying the top env inset unconditionally can
+    double-count that space and push the titlebar down.
+    """
+    m = re.search(r'\.app-titlebar\{(?P<body>[^}]*)\}', CSS)
+    assert m, ".app-titlebar rule missing from style.css"
+    rule = m.group("body")
+    assert "padding-top:var(--app-titlebar-safe-top)" in rule, (
+        ".app-titlebar must use the scoped safe-area variable for top padding"
+    )
+    assert "padding-top:env(safe-area-inset-top" not in rule, (
+        ".app-titlebar must not apply env(safe-area-inset-top) directly in "
+        "the base browser/webview layout"
+    )
+
+
+def test_titlebar_safe_area_top_preserved_for_standalone_modes():
+    """Installed/fullscreen app modes should still protect notched devices."""
+    assert "--app-titlebar-safe-top:0px" in CSS, (
+        "titlebar top safe-area variable must default to 0px for browser/webview layouts"
+    )
+    pattern = re.compile(
+        r'@media\s*\(display-mode:\s*standalone\)\s*,\s*'
+        r'\(display-mode:\s*fullscreen\)\s*\{[^}]*'
+        r'--app-titlebar-safe-top:\s*env\(safe-area-inset-top',
+        re.DOTALL,
+    )
+    assert pattern.search(CSS), (
+        "standalone/fullscreen display modes must opt back into "
+        "env(safe-area-inset-top) for notched installed-app layouts"
+    )
+
+
 def test_composer_touch_target_size():
     """Send button and composer inputs must have minimum 44px touch targets on mobile.
 
@@ -413,6 +554,65 @@ def test_composer_touch_target_size():
     # We check that there's at least a min-height definition for touch targets
     assert re.search(r'(min-height|height).*44px', CSS), \
         "style.css must define 44px minimum touch targets for mobile (send button, nav buttons)"
+
+
+def test_mobile_composer_footer_wraps_controls():
+    """Phone composer controls must wrap instead of colliding in one row."""
+    mobile_css = _composer_phone_media_block()
+
+    footer = _declarations(_rule_body(mobile_css, ".composer-footer"))
+    assert footer.get("flex-wrap") == "wrap", \
+        "mobile composer footer must enable flex-wrap"
+
+    left = _declarations(_rule_body(mobile_css, ".composer-left"))
+    assert left.get("flex") == "1 1 100%", \
+        "mobile composer-left controls must take their own row"
+    assert left.get("width") == "100%", \
+        "mobile composer-left controls must span the row"
+    assert left.get("flex-wrap") == "wrap", \
+        "mobile composer-left controls must wrap"
+
+    right = _declarations(_rule_body(mobile_css, ".composer-right"))
+    assert right.get("flex") == "1 1 100%", \
+        "mobile composer-right actions must take their own row"
+    assert right.get("width") == "100%", \
+        "mobile composer-right actions must span the row"
+    assert right.get("justify-content") == "flex-end", \
+        "mobile composer-right actions must stay end-aligned"
+
+
+def test_mobile_composer_left_has_bounded_overflow():
+    """If many controls are visible, the control row should scroll, not overlap."""
+    left = _declarations(_rule_body(_composer_phone_media_block(), ".composer-left"))
+    assert left.get("overflow-x") == "hidden", \
+        "mobile composer-left must hide horizontal overflow"
+    assert left.get("overflow-y") == "auto", \
+        "mobile composer-left must allow bounded vertical overflow"
+    assert "max-height" in left, \
+        "mobile composer-left must have bounded vertical overflow"
+
+
+def test_mobile_composer_left_controls_keep_touch_friendly_sizing():
+    """Compact left-row composer controls must keep 44px touch targets."""
+    mobile_css = _composer_phone_media_block()
+    for selector in (
+        ".composer-profile-chip",
+        ".composer-model-chip",
+        ".composer-reasoning-chip",
+    ):
+        declarations = _declarations(_rule_body(mobile_css, selector))
+        assert declarations.get("min-width") == "44px", \
+            f"{selector} must keep a 44px minimum width on phones"
+        assert declarations.get("min-height") == "44px", \
+            f"{selector} must keep a 44px minimum height on phones"
+
+    if ".composer-workspace-files-btn" in mobile_css:
+        files_btn = _declarations(_rule_body(mobile_css, ".composer-workspace-files-btn"))
+        workspace_group = _declarations(_rule_body(mobile_css, ".composer-workspace-group"))
+        assert files_btn.get("min-width") == "44px", \
+            ".composer-workspace-files-btn must keep a 44px minimum width on phones"
+        assert workspace_group.get("min-height") == "44px", \
+            ".composer-workspace-group must preserve 44px touch height on phones"
 
 
 # ── Input zoom prevention ─────────────────────────────────────────────────────
