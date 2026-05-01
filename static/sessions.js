@@ -1442,6 +1442,19 @@ function renderSessionListFromCache(){
       pinInd.innerHTML=ICONS.pin;
       titleRow.appendChild(pinInd);
     }
+    // Parent session indicator for forked/branched sessions (#465)
+    if(s.parent_session_id){
+      const branchInd=document.createElement('span');
+      branchInd.className='session-branch-indicator';
+      branchInd.textContent='\u2482'; // ⑂
+      branchInd.title=(typeof t==='function'?t('forked_from'):'Forked from')+' '+s.parent_session_id;
+      branchInd.style.cursor='pointer';
+      branchInd.onclick=(e)=>{
+        e.stopPropagation();
+        if(typeof loadSession==='function') loadSession(s.parent_session_id);
+      };
+      titleRow.appendChild(branchInd);
+    }
     const title=document.createElement('span');
     title.className='session-title';
     title.textContent=cleanTitle||'Untitled';
@@ -1590,13 +1603,39 @@ function renderSessionListFromCache(){
     // onclick/ondblclick are unreliable on touch devices (iPad Safari especially):
     // hover-triggered layout shifts, ghost clicks, and 300ms delay all break
     // single-tap navigation. pointerup fires immediately on both mouse & touch.
+    // Mouse clicks are instant; touch presses need a 300ms delay to distinguish
+    // a tap from a scroll-drag gesture on mobile.
+    // Drag detection (pointermove > 5px) cancels the pending tap on release.
     let _lastTapTime=0;
     let _tapTimer=null;
+    let _pointerDownX=0;
+    let _pointerDownY=0;
+    let _isDragging=false;
+    let _clearDragTimer=null;
+    el.onpointerdown=(e)=>{
+      if(e.pointerType==='mouse' && e.button!==0) return;
+      _pointerDownX=e.clientX;
+      _pointerDownY=e.clientY;
+      _isDragging=false;
+    };
+    el.onpointermove=(e)=>{
+      if(_isDragging) return;
+      const dx=Math.abs(e.clientX-_pointerDownX);
+      const dy=Math.abs(e.clientY-_pointerDownY);
+      if(dx>5||dy>5){
+        _isDragging=true;
+        el.classList.add('dragging');
+        // Cancel any pending drag-clear so we don't flash hover mid-drag
+        if(_clearDragTimer){clearTimeout(_clearDragTimer);_clearDragTimer=null;}
+      }
+    };
     el.onpointerup=(e)=>{
       if(e.pointerType==='mouse' && e.button!==0) return;  // ignore right/middle click
       if(_renamingSid) return;
       if(actions.contains(e.target)) return;
       if(_sessionSelectMode){e.stopPropagation();toggleSessionSelect(s.session_id);return;}
+      // If the pointer moved enough to be a drag, cancel any pending tap
+      if(_isDragging){clearTimeout(_tapTimer);_tapTimer=null;_lastTapTime=0;_clearDragTimer=setTimeout(()=>{el.classList.remove('dragging');_clearDragTimer=null;},50);return;}
       const now=Date.now();
       if(now-_lastTapTime<350){
         // Double-tap: rename
@@ -1608,8 +1647,10 @@ function renderSessionListFromCache(){
       }
       _lastTapTime=now;
       // Single tap: wait to ensure it's not the first of a double-tap,
-      // then navigate
+      // then navigate. Mouse is instant; touch needs delay to suppress
+      // accidental navigation during scroll-drag lifts.
       clearTimeout(_tapTimer);
+      const delay=e.pointerType==='mouse'?0:300;
       _tapTimer=setTimeout(async()=>{
         _tapTimer=null;
         _lastTapTime=0;
@@ -1622,7 +1663,7 @@ function renderSessionListFromCache(){
         }
         await loadSession(s.session_id);renderSessionListFromCache();
         if(typeof closeMobileSidebar==='function')closeMobileSidebar();
-      }, 300);
+      }, delay);
     };
     return el;
   }
