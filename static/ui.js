@@ -902,6 +902,17 @@ document.addEventListener('click',function(e){
   closeMobileComposerConfig();
 });
 
+document.addEventListener('keydown',function(e){
+  if(e.key!=='Escape') return;
+  const panel=$('composerMobileConfigPanel');
+  if(!panel||!panel.classList.contains('open')) return;
+  e.preventDefault();
+  closeMobileComposerConfig();
+  if(typeof closeWsDropdown==='function') closeWsDropdown();
+  closeModelDropdown();
+  closeReasoningDropdown();
+});
+
 window.addEventListener('resize',function(){
   if(window.matchMedia && !window.matchMedia('(max-width: 640px)').matches){
     closeMobileComposerConfig();

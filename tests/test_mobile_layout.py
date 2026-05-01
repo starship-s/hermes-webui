@@ -742,6 +742,32 @@ def test_model_and_reasoning_controls_live_in_mobile_overflow_panel():
         "mobile overflow panel must size the model/reasoning actions"
 
 
+def test_model_and_reasoning_dropdowns_use_mobile_panel_anchors():
+    """Model/reasoning dropdowns must anchor to mobile actions while the overflow is open."""
+    ui_js = (REPO / "static" / "ui.js").read_text(encoding="utf-8")
+    model_start = ui_js.index("function _positionModelDropdown()")
+    model_end = ui_js.index("function renderModelDropdown()", model_start)
+    model_body = ui_js[model_start:model_end]
+    for expected in (
+        "composerMobileConfigPanel",
+        "composerMobileModelAction",
+        "classList.contains('open')",
+    ):
+        assert expected in model_body, \
+            f"_positionModelDropdown must keep mobile-panel anchor logic ({expected})"
+
+    reasoning_start = ui_js.index("function _positionReasoningDropdown()")
+    reasoning_end = ui_js.index("function closeReasoningDropdown()", reasoning_start)
+    reasoning_body = ui_js[reasoning_start:reasoning_end]
+    for expected in (
+        "composerMobileConfigPanel",
+        "composerMobileReasoningAction",
+        "classList.contains('open')",
+    ):
+        assert expected in reasoning_body, \
+            f"_positionReasoningDropdown must keep mobile-panel anchor logic ({expected})"
+
+
 def test_context_details_live_in_mobile_overflow_panel():
     """Context details should be reachable in overflow without adding a composer slot."""
     panel_start = HTML.index('id="composerMobileConfigPanel"')
@@ -821,6 +847,8 @@ def test_workspace_control_lives_in_mobile_overflow_panel():
         "workspace dropdown positioning must know the mobile workspace action"
     assert "composerMobileConfigPanel" in position_body, \
         "workspace dropdown positioning must anchor to the mobile panel action while open"
+    assert "anchor to #composerMobileWorkspaceAction" in position_body, \
+        "workspace dropdown positioning should document the mobile-panel anchor choice"
 
     toggle_start = panels_js.index("function toggleComposerWsDropdown()")
     toggle_end = panels_js.index("function closeWsDropdown()", toggle_start)
@@ -833,6 +861,67 @@ def test_workspace_control_lives_in_mobile_overflow_panel():
     ui_js = (REPO / "static" / "ui.js").read_text(encoding="utf-8")
     assert "e.target.closest('#composerWsDropdown')" in ui_js, \
         "mobile overflow click-away handling must allow interaction with the workspace dropdown"
+
+
+def test_mobile_config_panel_escape_closes_panel_and_dropdowns():
+    """Escape should close mobile overflow state without touching desktop-only dropdowns."""
+    ui_js = (REPO / "static" / "ui.js").read_text(encoding="utf-8")
+    keydown_start = ui_js.index("document.addEventListener('keydown',function(e){", ui_js.index("function toggleMobileComposerConfig()"))
+    keydown_end = ui_js.index("\n});", keydown_start)
+    keydown_body = ui_js[keydown_start:keydown_end]
+    assert "e.key!=='Escape'" in keydown_body, \
+        "mobile config Escape handler must only handle Escape"
+    assert "composerMobileConfigPanel" in keydown_body, \
+        "mobile config Escape handler must look up the mobile config panel"
+    assert "classList.contains('open')" in keydown_body, \
+        "mobile config Escape handler must be gated on the open mobile panel"
+    for expected in (
+        "closeMobileComposerConfig()",
+        "closeWsDropdown",
+        "closeModelDropdown()",
+        "closeReasoningDropdown()",
+    ):
+        assert expected in keydown_body, \
+            f"mobile config Escape handler must close related state ({expected})"
+
+
+def test_reasoning_chip_updates_desktop_and_mobile_controls():
+    """Reasoning chip sync should keep both footer and mobile overflow labels current."""
+    ui_js = (REPO / "static" / "ui.js").read_text(encoding="utf-8")
+    chip_start = ui_js.index("function _applyReasoningChip(eff)")
+    chip_end = ui_js.index("function fetchReasoningChip()", chip_start)
+    chip_body = ui_js[chip_start:chip_end]
+    for expected in (
+        "composerReasoningWrap",
+        "composerMobileReasoningAction",
+        "composerReasoningLabel",
+        "composerMobileReasoningLabel",
+        "label.textContent=text",
+        "mobileLabel.textContent=text",
+    ):
+        assert expected in chip_body, \
+            f"_applyReasoningChip must update desktop and mobile reasoning UI ({expected})"
+
+
+def test_mobile_config_kickers_have_i18n_fallbacks():
+    """Mobile overflow kicker labels should be localizable without losing HTML fallback text."""
+    panel_start = HTML.index('id="composerMobileConfigPanel"')
+    panel_end = HTML.index('<div class="profile-dropdown"', panel_start)
+    panel_html = HTML[panel_start:panel_end]
+    i18n_js = (REPO / "static" / "i18n.js").read_text(encoding="utf-8")
+    en_start = i18n_js.index("  en: {")
+    en_end = i18n_js.index("\n  ru: {", en_start)
+    english = i18n_js[en_start:en_end]
+    for key, label in (
+        ("composer_mobile_workspace", "Workspace"),
+        ("composer_mobile_model", "Model"),
+        ("composer_mobile_reasoning", "Reasoning"),
+        ("composer_mobile_context", "Context"),
+    ):
+        assert f'data-i18n="{key}">{label}</span>' in panel_html, \
+            f"mobile panel kicker {label} must keep data-i18n and fallback text"
+        assert f"{key}: '{label}'" in english, \
+            f"English locale must define {key}"
 
 
 def test_mobile_composer_primary_controls_keep_touch_friendly_sizing():
