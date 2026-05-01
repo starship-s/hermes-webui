@@ -764,6 +764,26 @@ def test_model_and_reasoning_controls_live_in_mobile_overflow_panel():
         "mobile overflow panel must size the model/reasoning actions"
 
 
+def test_toolsets_control_lives_in_mobile_overflow_panel():
+    """Session toolsets must stay reachable when the footer chip is hidden."""
+    panel_start = HTML.index('id="composerMobileConfigPanel"')
+    panel_end = HTML.index('<div class="profile-dropdown"', panel_start)
+    panel_html = HTML[panel_start:panel_end]
+    assert 'id="composerMobileToolsetsAction"' in panel_html, \
+        "mobile toolsets action must be inside the overflow panel"
+    assert 'onclick="toggleToolsetsDropdown()"' in panel_html, \
+        "mobile toolsets action must reuse the existing toolsets dropdown"
+    assert 'id="composerMobileToolsetsLabel"' in panel_html, \
+        "mobile toolsets action must expose the selected toolsets label"
+    assert 'data-i18n="composer_mobile_toolsets">Tools</span>' in panel_html, \
+        "mobile toolsets action must keep data-i18n and fallback text"
+
+    mobile_css = _composer_phone_media_block()
+    toolsets_wrap = _declarations(_rule_body(mobile_css, ".composer-left > .composer-toolsets-wrap"))
+    assert toolsets_wrap.get("display") == "none!important", \
+        "phone width must hide the footer toolsets chip behind overflow"
+
+
 def test_model_and_reasoning_dropdowns_use_mobile_panel_anchors():
     """Model/reasoning dropdowns must anchor to mobile actions while the overflow is open."""
     ui_js = (REPO / "static" / "ui.js").read_text(encoding="utf-8")
@@ -788,6 +808,21 @@ def test_model_and_reasoning_dropdowns_use_mobile_panel_anchors():
     ):
         assert expected in reasoning_body, \
             f"_positionReasoningDropdown must keep mobile-panel anchor logic ({expected})"
+
+
+def test_toolsets_dropdown_uses_mobile_panel_anchor():
+    """Toolsets dropdown must anchor to the mobile row while the overflow is open."""
+    ui_js = (REPO / "static" / "ui.js").read_text(encoding="utf-8")
+    toolsets_start = ui_js.index("function _positionToolsetsDropdown()")
+    toolsets_end = ui_js.index("function toggleToolsetsDropdown()", toolsets_start)
+    toolsets_body = ui_js[toolsets_start:toolsets_end]
+    for expected in (
+        "composerMobileConfigPanel",
+        "composerMobileToolsetsAction",
+        "classList.contains('open')",
+    ):
+        assert expected in toolsets_body, \
+            f"_positionToolsetsDropdown must keep mobile-panel anchor logic ({expected})"
 
 
 def test_context_details_live_in_mobile_overflow_panel():
@@ -844,6 +879,20 @@ def test_context_details_live_in_mobile_overflow_panel():
         "mobile compress affordance should be compact inside the context row"
 
 
+def test_context_indicator_hidden_in_phone_and_container_compact_css():
+    """Compact container mode must not show the standalone context meter beside the badge."""
+    mobile_css = _composer_phone_media_block()
+    phone_ctx_wrap = _declarations(_rule_body(mobile_css, ".ctx-indicator-wrap"))
+    assert phone_ctx_wrap.get("display") == "none!important", \
+        "standalone context indicator must remain hidden from the phone composer row"
+
+    compact_520 = _container_query_block(CSS, "composer-footer (max-width: 520px)")
+    assert compact_520, "Expected full composer icon-only rules at @container composer-footer (max-width: 520px)"
+    compact_ctx_wrap = _declarations(_rule_body(compact_520, ".ctx-indicator-wrap"))
+    assert compact_ctx_wrap.get("display") == "none!important", \
+        "container compact mode must hide the standalone context indicator too"
+
+
 def test_workspace_control_lives_in_mobile_overflow_panel():
     """Workspace switching must stay reachable even when the inline switch chip is hidden."""
     panel_start = HTML.index('id="composerMobileConfigPanel"')
@@ -885,6 +934,24 @@ def test_workspace_control_lives_in_mobile_overflow_panel():
         "mobile overflow click-away handling must allow interaction with the workspace dropdown"
 
 
+def test_toolsets_mobile_click_away_paths_allow_dropdown_interaction():
+    """Click-away handlers must not close toolsets while using the mobile row or dropdown."""
+    ui_js = (REPO / "static" / "ui.js").read_text(encoding="utf-8")
+    click_start = ui_js.index("// Click-outside handler for toolsets dropdown")
+    click_end = ui_js.index("// Position toolsets dropdown on resize", click_start)
+    toolsets_click_body = ui_js[click_start:click_end]
+    assert "!e.target.closest('#composerMobileToolsetsAction')" in toolsets_click_body, \
+        "toolsets click-away handling must include the mobile toolsets action"
+    assert "!e.target.closest('#composerToolsetsDropdown')" in toolsets_click_body, \
+        "toolsets click-away handling must allow its dropdown"
+
+    panel_start = ui_js.index("function closeMobileComposerConfig()")
+    panel_end = ui_js.index("document.addEventListener('keydown',function(e){", panel_start)
+    panel_click_body = ui_js[panel_start:panel_end]
+    assert "e.target.closest('#composerToolsetsDropdown')" in panel_click_body, \
+        "mobile overflow click-away handling must allow interaction with the toolsets dropdown"
+
+
 def test_mobile_config_panel_escape_closes_panel_and_dropdowns():
     """Escape should close mobile overflow state without touching desktop-only dropdowns."""
     ui_js = (REPO / "static" / "ui.js").read_text(encoding="utf-8")
@@ -902,6 +969,7 @@ def test_mobile_config_panel_escape_closes_panel_and_dropdowns():
         "closeWsDropdown",
         "closeModelDropdown()",
         "closeReasoningDropdown()",
+        "closeToolsetsDropdown",
     ):
         assert expected in keydown_body, \
             f"mobile config Escape handler must close related state ({expected})"
@@ -925,6 +993,23 @@ def test_reasoning_chip_updates_desktop_and_mobile_controls():
             f"_applyReasoningChip must update desktop and mobile reasoning UI ({expected})"
 
 
+def test_toolsets_chip_updates_desktop_and_mobile_controls():
+    """Toolsets chip sync should keep footer and mobile overflow state current."""
+    ui_js = (REPO / "static" / "ui.js").read_text(encoding="utf-8")
+    chip_start = ui_js.index("function _applyToolsetsChip(toolsets)")
+    chip_end = ui_js.index("function _syncToolsetsChip()", chip_start)
+    chip_body = ui_js[chip_start:chip_end]
+    for expected in (
+        "composerToolsetsLabel",
+        "composerMobileToolsetsLabel",
+        "composerMobileToolsetsAction",
+        "mobileLabel.textContent",
+        "mobileAction.classList.toggle('has-custom'",
+    ):
+        assert expected in chip_body, \
+            f"_applyToolsetsChip must update desktop and mobile toolsets UI ({expected})"
+
+
 def test_mobile_config_kickers_have_i18n_fallbacks():
     """Mobile overflow kicker labels should be localizable without losing HTML fallback text."""
     panel_start = HTML.index('id="composerMobileConfigPanel"')
@@ -938,6 +1023,7 @@ def test_mobile_config_kickers_have_i18n_fallbacks():
         ("composer_mobile_workspace", "Workspace"),
         ("composer_mobile_model", "Model"),
         ("composer_mobile_reasoning", "Reasoning"),
+        ("composer_mobile_toolsets", "Tools"),
         ("composer_mobile_context", "Context"),
     ):
         assert f'data-i18n="{key}">{label}</span>' in panel_html, \

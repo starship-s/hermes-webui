@@ -928,8 +928,9 @@
   .composer-mobile-config-panel{display:none;position:absolute;left:8px;right:8px;bottom:calc(100% + 6px);z-index:180;padding:8px;gap:8px;align-items:stretch;justify-content:flex-start;flex-wrap:wrap;background:var(--surface);border:1px solid var(--border2);border-radius:12px;box-shadow:0 -6px 28px rgba(0,0,0,.35);overflow:visible;}
   .composer-mobile-config-action{box-sizing:border-box;display:inline-flex;align-items:center;gap:10px;min-width:0;min-height:44px;padding:8px 10px;border-radius:10px;border:1px solid transparent;background:transparent;color:var(--muted);font:inherit;text-align:left;cursor:pointer;overflow:hidden;}
   .composer-mobile-config-action.active{background:var(--accent-bg);border-color:var(--accent-bg-strong);color:var(--text);}
+  .composer-mobile-config-action.has-custom{color:var(--accent);border-color:var(--accent-bg);}
   .composer-mobile-config-copy{display:flex;flex-direction:column;gap:1px;min-width:0;line-height:1.2;}
-  /* The kicker labels (WORKSPACE / MODEL / REASONING / CONTEXT) duplicate the
+  /* The kicker labels (WORKSPACE / MODEL / REASONING / TOOLS) duplicate the
      meaning the row icon already conveys, and at iPhone 14 width (390px) the
      ~60px copy column truncates them. Hide them inside the open panel — the
      icon + value gives a cleaner two-row layout per pill. The .context row
@@ -1195,6 +1196,7 @@
     .composer-mobile-config-panel.open{display:flex;}
     .composer-mobile-config-action{flex:1 1 0;min-height:44px;min-width:0;background:var(--input-bg);border-color:var(--border);}
     .composer-mobile-context-action{flex:1 0 100%;}
+    .ctx-indicator-wrap{display:none!important;}
     .composer-divider{display:none;}
   }
 

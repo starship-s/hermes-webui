@@ -927,17 +927,23 @@ function _applyToolsetsChip(toolsets) {
   const wrap = $('composerToolsetsWrap');
   const label = $('composerToolsetsLabel');
   const chip = $('composerToolsetsChip');
+  const mobileLabel = $('composerMobileToolsetsLabel');
+  const mobileAction = $('composerMobileToolsetsAction');
   if (!wrap || !label) return;
   wrap.style.display = '';
+  if (mobileAction) mobileAction.style.display = '';
   const hasCustom = Array.isArray(toolsets) && toolsets.length > 0;
-  if (hasCustom) {
-    label.textContent = toolsets.join(', ');
-    chip.classList.add('has-custom');
-    chip.title = t('session_toolsets') + ': ' + toolsets.join(', ');
-  } else {
-    label.textContent = t('session_toolsets_global');
-    chip.classList.remove('has-custom');
-    chip.title = t('session_toolsets');
+  const text = hasCustom ? toolsets.join(', ') : t('session_toolsets_global');
+  const title = hasCustom ? t('session_toolsets') + ': ' + text : t('session_toolsets');
+  label.textContent = text;
+  if (mobileLabel) mobileLabel.textContent = text;
+  if (chip) {
+    chip.classList.toggle('has-custom', hasCustom);
+    chip.title = title;
+  }
+  if (mobileAction) {
+    mobileAction.classList.toggle('has-custom', hasCustom);
+    mobileAction.title = title;
   }
 }
 
@@ -979,9 +985,12 @@ function _populateToolsetsDropdown() {
 function _positionToolsetsDropdown() {
   const dd = $('composerToolsetsDropdown');
   const chip = $('composerToolsetsChip');
+  const mobileAction = $('composerMobileToolsetsAction');
   const footer = document.querySelector('.composer-footer');
   if (!dd || !chip || !footer) return;
-  const chipRect = chip.getBoundingClientRect();
+  const panel = $('composerMobileConfigPanel');
+  const anchor = (panel && panel.classList.contains('open') && mobileAction) ? mobileAction : chip;
+  const chipRect = anchor.getBoundingClientRect();
   const footerRect = footer.getBoundingClientRect();
   let left = chipRect.left - footerRect.left;
   const maxLeft = Math.max(0, footer.clientWidth - dd.offsetWidth);
@@ -992,6 +1001,7 @@ function _positionToolsetsDropdown() {
 function toggleToolsetsDropdown() {
   const dd = $('composerToolsetsDropdown');
   const chip = $('composerToolsetsChip');
+  const mobileAction = $('composerMobileToolsetsAction');
   if (!dd || !chip) return;
   if (typeof S === 'undefined' || !S || !S.session) return;
   const open = dd.classList.contains('open');
@@ -1005,6 +1015,7 @@ function toggleToolsetsDropdown() {
   dd.classList.add('open');
   _positionToolsetsDropdown();
   chip.classList.add('active');
+  if (mobileAction) mobileAction.classList.add('active');
   // Focus the input after a tick so the layout has settled
   setTimeout(() => { const inp = $('toolsetsInput'); if (inp) inp.focus(); }, 50);
 }
@@ -1012,8 +1023,10 @@ function toggleToolsetsDropdown() {
 function closeToolsetsDropdown() {
   const dd = $('composerToolsetsDropdown');
   const chip = $('composerToolsetsChip');
+  const mobileAction = $('composerMobileToolsetsAction');
   if (dd) dd.classList.remove('open');
   if (chip) chip.classList.remove('active');
+  if (mobileAction) mobileAction.classList.remove('active');
 }
 
 function _applySessionToolsets(toolsets) {
@@ -1045,6 +1058,7 @@ function _applySessionToolsets(toolsets) {
 document.addEventListener('click', function(e) {
   if (
     !e.target.closest('#composerToolsetsChip') &&
+    !e.target.closest('#composerMobileToolsetsAction') &&
     !e.target.closest('#composerToolsetsDropdown')
   ) closeToolsetsDropdown();
   // Apply button
@@ -1089,6 +1103,7 @@ function closeMobileComposerConfig(){
   if(panel) panel.classList.remove('open');
   _syncMobileComposerConfigButton(false);
   if(typeof closeWsDropdown==='function') closeWsDropdown();
+  if(typeof closeToolsetsDropdown==='function') closeToolsetsDropdown();
 }
 
 function toggleMobileComposerConfig(){
@@ -1117,7 +1132,8 @@ document.addEventListener('click',function(e){
     e.target.closest('#composerMobileConfigPanel') ||
     e.target.closest('#composerWsDropdown') ||
     e.target.closest('#composerModelDropdown') ||
-    e.target.closest('#composerReasoningDropdown')
+    e.target.closest('#composerReasoningDropdown') ||
+    e.target.closest('#composerToolsetsDropdown')
   ) return;
   closeMobileComposerConfig();
 });
@@ -1131,6 +1147,7 @@ document.addEventListener('keydown',function(e){
   if(typeof closeWsDropdown==='function') closeWsDropdown();
   closeModelDropdown();
   closeReasoningDropdown();
+  if(typeof closeToolsetsDropdown==='function') closeToolsetsDropdown();
 });
 
 window.addEventListener('resize',function(){
@@ -1138,6 +1155,7 @@ window.addEventListener('resize',function(){
     closeMobileComposerConfig();
     closeModelDropdown();
     closeReasoningDropdown();
+    if(typeof closeToolsetsDropdown==='function') closeToolsetsDropdown();
     if(typeof closeWsDropdown==='function') closeWsDropdown();
   }
 });
@@ -1162,7 +1180,7 @@ let _scrollPinned=true;
 })();
 function _fmtTokens(n){if(!n||n<0)return'0';if(n>=1e6)return(n/1e6).toFixed(1)+'M';if(n>=1e3)return(n/1e3).toFixed(1)+'k';return String(n);}
 
-const _MOBILE_CONFIG_BASE_LABEL='Workspace, model, reasoning, and context settings';
+const _MOBILE_CONFIG_BASE_LABEL='Workspace, model, reasoning, tools, and context settings';
 
 function _setCtxCompressButton(btn,text){
   if(!btn)return;
