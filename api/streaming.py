@@ -3629,6 +3629,15 @@ def _run_agent_streaming(
                         logger.debug('[webui] Reusing cached agent for session %s', session_id)
 
                 if agent is not None:
+                    # Re-register reused cached agents with lifecycle tracking.
+                    # commit_session_memory() unregisters on successful commit;
+                    # if the user later reopens this same session and continues,
+                    # we need to register it again so future boundaries can commit.
+                    try:
+                        from api.session_lifecycle import register_agent
+                        register_agent(session_id, agent)
+                    except Exception:
+                        logger.exception("register_agent failed for reused cached session %s", session_id)
                     # Refresh volatile runtime credentials selected from provider
                     # pools without discarding cross-turn agent/provider state.
                     if not _refresh_cached_agent_runtime(agent, _agent_kwargs):
@@ -3683,8 +3692,11 @@ def _run_agent_streaming(
                         agent._interrupt_message = None
                 else:
                     agent = _AIAgent(**_agent_kwargs)
+                    _evicted_agents = []
                     with SESSION_AGENT_CACHE_LOCK:
                         SESSION_AGENT_CACHE[session_id] = (agent, _agent_sig)
+                        from api.session_lifecycle import register_agent
+                        register_agent(session_id, agent)
                         SESSION_AGENT_CACHE.move_to_end(session_id)  # LRU: mark as recently used
                         from api.config import SESSION_AGENT_CACHE_MAX
                         while len(SESSION_AGENT_CACHE) > SESSION_AGENT_CACHE_MAX:
@@ -3700,7 +3712,14 @@ def _run_agent_streaming(
                                     _evicted_agent._session_db.close()
                             except Exception:
                                 pass
+                            _evicted_agents.append((evicted_sid, _evicted_agent))
                             logger.debug('[webui] Evicted LRU agent from cache: %s', evicted_sid)
+                    for _evicted_sid, _evicted_agent in _evicted_agents:
+                        try:
+                            from api.session_lifecycle import commit_session_memory
+                            commit_session_memory(_evicted_sid, _evicted_agent)
+                        except Exception:
+                            logger.exception("commit_session_memory failed for evicted session %s", _evicted_sid)
                     logger.debug('[webui] Created new agent for session %s', session_id)
 
             # Store agent instance for cancel/interrupt propagation
@@ -4151,6 +4170,20 @@ def _run_agent_streaming(
                 if _agent_sid and _agent_sid != session_id:
                     old_sid = session_id
                     new_sid = _agent_sid
+                    # Commit the old session's memory before rotation.
+                    # Split into independent try blocks: if commit fails,
+                    # we still register the new SID so future commits work.
+                    try:
+                        from api.session_lifecycle import commit_session_memory
+                        commit_session_memory(old_sid)
+                    except Exception:
+                        logger.exception("commit_session_memory failed during compression rotation for %s", old_sid)
+                    try:
+                        from api.session_lifecycle import mark_session_active, register_agent
+                        register_agent(new_sid, agent)
+                        mark_session_active(new_sid)
+                    except Exception:
+                        logger.exception("register_agent failed during compression rotation for %s", new_sid)
                     s.session_id = new_sid
                     # Carry profile identity across the compression boundary.
                     # Without this, s.profile stays None on the continuation
@@ -4661,6 +4694,15 @@ def _run_agent_streaming(
                         })
             except Exception as _goal_exc:
                 logger.debug("Goal continuation hook failed for session %s: %s", session_id, _goal_exc)
+            # Auto-commit memory after each completed non-ephemeral turn so
+            # batch-extraction providers (OpenViking/Holographic) flush even if
+            # no later lifecycle boundary is hit.
+            try:
+                from api.session_lifecycle import commit_session_memory
+                commit_session_memory(getattr(s, 'session_id', session_id), agent)
+            except Exception:
+                logger.exception("post-turn commit_session_memory failed for session %s", session_id)
+
             raw_session = s.compact() | {'messages': s.messages, 'tool_calls': tool_calls}
             put('done', {'session': redact_session_data(raw_session), 'usage': usage})
             # Emit one last metering packet for the live message-header TPS label.

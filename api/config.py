@@ -3984,6 +3984,12 @@ SESSION_AGENT_CACHE_LOCK = threading.Lock()
 
 def _evict_session_agent(session_id: str) -> None:
     """Remove a cached agent for a session (on delete, clear, or model switch)."""
+    try:
+        from api.session_lifecycle import commit_session_memory, unregister_agent
+        commit_session_memory(session_id)
+        unregister_agent(session_id)
+    except Exception:
+        logger.exception("commit_session_memory/unregister_agent failed during agent eviction for %s", session_id)
     with SESSION_AGENT_CACHE_LOCK:
         SESSION_AGENT_CACHE.pop(session_id, None)
 

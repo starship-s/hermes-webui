@@ -4338,6 +4338,21 @@ def handle_post(handler, parsed) -> bool:
             body.get("model"),
             body.get("model_provider"),
         )
+        prev_sid = body.get("prev_session_id")
+        if prev_sid:
+            try:
+                # Best-effort validation for traceability only.
+                # Do not gate commit on this lookup: a session can be absent
+                # from in-memory/profile-scoped lookup while lifecycle still
+                # holds a valid agent handle that should be committed.
+                try:
+                    get_session(prev_sid)
+                except KeyError:
+                    logger.debug("prev session %s not found via get_session; attempting lifecycle commit anyway", prev_sid)
+                from api.session_lifecycle import commit_session_memory
+                commit_session_memory(prev_sid)
+            except Exception:
+                logger.exception("commit_session_memory failed for prev session %s", prev_sid)
         # Use the profile sent by the client tab (if any) so that two tabs on
         # different profiles never clobber each other via the process-level global.
         s = new_session(
@@ -7496,6 +7511,14 @@ def _start_chat_stream_for_session(
 ):
     """Persist pending state, register an SSE channel, and start an agent turn."""
     attachments = attachments or []
+    # Reopened sessions can be committed multiple times across their lifetime.
+    # Once a new turn starts, mark the session dirty so the next lifecycle
+    # boundary can flush the new turn without duplicating older commits.
+    try:
+        from api.session_lifecycle import mark_session_active
+        mark_session_active(getattr(s, "session_id", ""))
+    except Exception:
+        logger.exception("mark_session_active failed for session %s", getattr(s, "session_id", None))
     # Prevent duplicate runs in the same session while a stream is still active.
     # This commonly happens after page refresh/reconnect races and can produce
     # duplicated clarify cards for what appears to be a single user request.
