@@ -2096,35 +2096,106 @@ def _strip_provider_hint_for_reasoning(model_id: str) -> str:
     return model
 
 
+def _models_dev_reasoning_efforts(model_id: str, provider_id: str) -> list[str] | None:
+    """Look up reasoning-effort support from Hermes Agent models.dev metadata.
+
+    Returns:
+      - ``list(VALID_REASONING_EFFORTS)`` when metadata exists and
+        ``supports_reasoning`` is True.
+      - ``[]`` when metadata exists and ``supports_reasoning`` is False.
+      - ``None`` when the import fails, metadata is unavailable, or the
+        model/provider is unknown to models.dev.  Callers should treat
+        ``None`` as "no authoritative answer — fall through to heuristics".
+    """
+    try:
+        from agent.models_dev import get_model_capabilities
+    except Exception:
+        return None
+    try:
+        result = get_model_capabilities(provider=provider_id, model=model_id)
+    except Exception:
+        return None
+    if result is None:
+        return None
+    if getattr(result, "supports_reasoning", False):
+        return list(VALID_REASONING_EFFORTS)
+    return []
+
+
 def _heuristic_reasoning_efforts(model_id: str, provider_id: str) -> list[str]:
-    """Fallback when hermes_cli is unavailable."""
+    """Compatibility fallback when models.dev metadata is unavailable.
+
+    Used for old Hermes Agent builds, import failures, or unknown models.
+    Returns the full set of reasoning-effort levels for commonly-known
+    provider/model patterns, or an empty list for unknown combinations.
+    Broad bare-prefix patterns are intentionally limited — if models.dev
+    gave an authoritative ``False`` the caller already returned ``[]``
+    and will never reach this function.
+    """
     model = _strip_provider_hint_for_reasoning(model_id).lower()
     provider = _resolve_provider_alias(str(provider_id or "").strip().lower())
     if not model or provider in {"cursor-acp", "copilot-acp"}:
         return []
     bare = model.rsplit("/", 1)[-1]
-    if provider == "openai-codex" and bare.startswith(("gpt-5", "o1", "o3", "o4")):
+
+    # ── Provider-specific: o-series subset ────────────────────────────
+
+    if provider in {"copilot", "github-copilot", "openai-codex"}:
         if bare.startswith(("o1", "o3", "o4")):
             return ["low", "medium", "high"]
-        return list(VALID_REASONING_EFFORTS)
-    if provider in {"copilot", "github-copilot"}:
-        if bare.startswith(("gpt-5", "o1", "o3", "o4")):
-            if bare.startswith(("o1", "o3", "o4")):
-                return ["low", "medium", "high"]
+        if bare.startswith(("gpt-5",)):
             return list(VALID_REASONING_EFFORTS)
+        return []
+
+    # ── Kimi / Moonshot compatibility fallback ────────────────────────
+    # models.dev usually covers the provider catalog, but custom/proxy and
+    # OpenRouter-style Kimi slugs can be missing. Only run this after an
+    # authoritative models.dev False has had a chance to stop resolution.
+    if provider in {"kimi", "kimi-coding", "moonshot"} or "kimi" in bare or "moonshot" in bare:
+        return ["low", "medium", "high"]
+
+    # ── Custom OpenAI-compatible providers ────────────────────────────
+
+    if provider.startswith("custom:"):
+        return list(VALID_REASONING_EFFORTS)
+
+    # ── OpenRouter prefix patterns ────────────────────────────────────
+
     prefixes = (
         "deepseek/",
         "anthropic/",
         "openai/",
         "x-ai/",
         "google/gemini-2",
+        "google/gemini-3",
         "google/gemma-4",
         "qwen/qwen3",
         "tencent/hy3-preview",
         "xiaomi/",
+        "kimi/",
+        "moonshot/",
+        "z-ai/",
+        "zhipu/",
     )
     if any(model.startswith(prefix) for prefix in prefixes):
         return list(VALID_REASONING_EFFORTS)
+
+    # ── Narrow bare-prefix fallback (only for unknown metadata) ───────
+
+    bare_prefixes = (
+        "gpt-5",
+        "o1-",
+        "o3-",
+        "o4-",
+        "claude-",
+        "gemini-2",
+        "gemini-3",
+    )
+    if any(bare.startswith(p) for p in bare_prefixes):
+        if bare.startswith(("o1-", "o3-", "o4-")):
+            return ["low", "medium", "high"]
+        return list(VALID_REASONING_EFFORTS)
+
     return []
 
 
@@ -2133,7 +2204,22 @@ def resolve_model_reasoning_efforts(
     provider_id: str | None = None,
     base_url: str | None = None,
 ) -> list[str]:
-    """Return supported reasoning-effort levels for *model_id*, or [] if none."""
+    """Return supported reasoning-effort levels for *model_id*, or [] if none.
+
+    Resolver order (spec v2):
+      1. Normalize provider/model (strip @provider: hints, resolve aliases,
+         fall back to config default provider when not supplied).
+      2. Explicit unsupported: ACP subprocess providers → [].
+      3. Provider-specific exact resolvers that need level subsets or live
+         probing: copilot/github-copilot and lmstudio. Do not route
+         openai-codex through the GitHub/Copilot helper; Codex Responses can
+         use the full effort set exposed by Hermes Agent metadata.
+      4. Hermes Agent models.dev metadata (supports_reasoning True → full
+         set, False → [] and stop; None/unknown → fall through).
+      5. Custom OpenAI-compatible providers when models.dev returned None.
+      6. Compatibility heuristic (_heuristic_reasoning_efforts) for old
+         builds / import failures / unknown metadata.
+    """
     model = str(model_id or "").strip()
     if not model:
         return []
@@ -2147,54 +2233,55 @@ def resolve_model_reasoning_efforts(
             provider = str((cfg.get("model") or {}).get("provider") or "").strip().lower()
 
     provider = _resolve_provider_alias(provider)
+    model = _strip_provider_hint_for_reasoning(model)
+
+    # Step 2: Explicit unsupported.
     if provider in {"cursor-acp", "copilot-acp"}:
         return []
 
+    # Step 3: Provider-specific exact resolvers.
     try:
         from hermes_cli.models import (
             github_model_reasoning_efforts,
             lmstudio_model_reasoning_options,
         )
+
+        if provider in {"copilot", "github-copilot"}:
+            return github_model_reasoning_efforts(model)
+
+        if provider == "lmstudio":
+            probe_base = resolved_base_url or _get_provider_base_url(provider)
+            opts = lmstudio_model_reasoning_options(model, probe_base)
+            normalized = [str(opt).strip().lower() for opt in opts if str(opt).strip()]
+            if not normalized or set(normalized).issubset({"off"}):
+                return []
+            level_opts = [opt for opt in normalized if opt in VALID_REASONING_EFFORTS]
+            if level_opts:
+                return list(dict.fromkeys(level_opts))
+            if set(normalized).issubset({"off", "on"}):
+                return []
+            return []
     except Exception:
-        return _heuristic_reasoning_efforts(model, provider)
+        # If the exact GitHub/Copilot resolver is unavailable or fails, keep
+        # its level-subset semantics via the compatibility helper instead of
+        # falling through to models.dev, whose boolean reasoning flag cannot
+        # distinguish o-series low/medium/high-only models from full-effort
+        # models.
+        if provider in {"copilot", "github-copilot"}:
+            return _heuristic_reasoning_efforts(model, provider)
+        # hermes_cli unavailable; fall through to models.dev then heuristics.
 
-    hinted_model = _strip_provider_hint_for_reasoning(model)
-    if provider in {"copilot", "github-copilot"}:
-        return github_model_reasoning_efforts(hinted_model)
+    # Step 4: Hermes Agent models.dev metadata.
+    md_result = _models_dev_reasoning_efforts(model, provider)
+    if md_result is not None:
+        return md_result
 
-    if provider == "openai-codex":
-        bare = hinted_model.rsplit("/", 1)[-1]
-        return github_model_reasoning_efforts(bare)
-
-    if provider == "lmstudio":
-        probe_base = resolved_base_url or _get_provider_base_url(provider)
-        opts = lmstudio_model_reasoning_options(model, probe_base)
-        normalized = [str(opt).strip().lower() for opt in opts if str(opt).strip()]
-        if not normalized or set(normalized).issubset({"off"}):
-            return []
-        level_opts = [opt for opt in normalized if opt in VALID_REASONING_EFFORTS]
-        if level_opts:
-            return list(dict.fromkeys(level_opts))
-        if set(normalized).issubset({"off", "on"}):
-            return []
-        return []
-
-    model_lower = model.lower()
-    prefixes = (
-        "deepseek/",
-        "anthropic/",
-        "openai/",
-        "x-ai/",
-        "google/gemini-2",
-        "google/gemma-4",
-        "qwen/qwen3",
-        "tencent/hy3-preview",
-        "xiaomi/",
-    )
-    if any(model_lower.startswith(prefix) for prefix in prefixes):
+    # Step 5: Custom OpenAI-compatible providers (models.dev returned None).
+    if provider.startswith("custom:"):
         return list(VALID_REASONING_EFFORTS)
 
-    return []
+    # Step 6: Compatibility heuristic (fallback-only).
+    return _heuristic_reasoning_efforts(model, provider)
 
 
 def get_reasoning_status(
@@ -2209,16 +2296,34 @@ def get_reasoning_status(
     Keys:
       - show_reasoning: bool — from ``display.show_reasoning`` (default True)
       - reasoning_effort: str — from ``agent.reasoning_effort`` ('' = default)
+      - supported_efforts: list[str] — effort levels the model supports
+      - supports_reasoning_effort: bool — whether the model supports effort
     """
     config_data = _load_yaml_config_file(_get_config_path())
     display_cfg = config_data.get("display") or {}
     agent_cfg = config_data.get("agent") or {}
     show_raw = display_cfg.get("show_reasoning") if isinstance(display_cfg, dict) else None
     effort_raw = agent_cfg.get("reasoning_effort") if isinstance(agent_cfg, dict) else None
+
+    # When the caller doesn't specify a model, fall back to the profile's
+    # default model/provider so the boot-time reasoning-chip fetch returns
+    # meaningful supported_efforts instead of an empty list.
+    resolve_model = model_id
+    resolve_provider = provider_id
+    resolve_base_url = base_url
+    if not resolve_model:
+        model_cfg = config_data.get("model") or {}
+        if isinstance(model_cfg, dict):
+            resolve_model = str(model_cfg.get("default") or "").strip() or None
+            if not resolve_provider and model_cfg.get("provider"):
+                resolve_provider = str(model_cfg["provider"]).strip()
+            if not resolve_base_url and model_cfg.get("base_url"):
+                resolve_base_url = str(model_cfg["base_url"]).strip()
+
     supported_efforts = resolve_model_reasoning_efforts(
-        model_id,
-        provider_id=provider_id,
-        base_url=base_url,
+        resolve_model,
+        provider_id=resolve_provider,
+        base_url=resolve_base_url,
     )
     return {
         # Match CLI default (True if unset in config.yaml)
