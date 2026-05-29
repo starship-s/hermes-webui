@@ -717,6 +717,40 @@ def read_session_lineage_metadata(db_path: Path, session_ids: list[str] | set[st
                     parent_id = rows.get(sid, {}).get('parent_session_id')
                     if parent_id and parent_id not in rows and parent_id not in to_fetch:
                         to_fetch.add(parent_id)
+
+            # Fetch continuation children so stale sidecars can discover
+            # their latest lineage tip.  Walk down from the *wanted*
+            # sessions only (not every parent in the walk-up) to find
+            # continuation descendants that are not yet in rows.
+            _searched_as_parent: set[str] = set()
+            _frontier = set(wanted)
+            for _walk in range(10):
+                parent_ids_to_search = [
+                    rid for rid in _frontier if rid not in _searched_as_parent
+                ]
+                if not parent_ids_to_search:
+                    break
+                _searched_as_parent.update(parent_ids_to_search)
+                newly_found: set[str] = set()
+                for i in range(0, len(parent_ids_to_search), IN_CHUNK):
+                    chunk = parent_ids_to_search[i:i + IN_CHUNK]
+                    placeholders = ','.join('?' * len(chunk))
+                    cur.execute(
+                        f"""
+                        SELECT s.id, s.source, {session_source_expr}, s.title, s.started_at, s.parent_session_id, s.ended_at, s.end_reason
+                        FROM sessions s
+                        WHERE s.parent_session_id IN ({placeholders})
+                        """,
+                        chunk,
+                    )
+                    for row in cur.fetchall():
+                        rid = row['id']
+                        if rid not in rows:
+                            rows[rid] = dict(row)
+                            newly_found.add(rid)
+                if not newly_found:
+                    break
+                _frontier = newly_found
     except Exception:
         return {}
 
@@ -778,5 +812,52 @@ def read_session_lineage_metadata(db_path: Path, session_ids: list[str] | set[st
             entry = metadata.setdefault(sid, {})
             entry['_lineage_root_id'] = root_id
             entry['_compression_segment_count'] = segment_count
+
+    # ── Tip discovery: find the latest continuation child for each session
+    # that shares the same root lineage but is not itself in the sidebar set.
+    # This allows stale sidecar rows to learn about the latest state.db tip
+    # even when CLI sessions are not shown.
+    children_by_parent: dict[str, list[dict]] = {}
+    for row in rows.values():
+        pid = row.get('parent_session_id')
+        if pid:
+            children_by_parent.setdefault(pid, []).append(row)
+
+    def _walk_continuation_tip(session_id: str, seen: set[str] | None = None) -> tuple[str | None, int]:
+        if seen is None:
+            seen = {session_id}
+        else:
+            seen.add(session_id)
+        current_id = session_id
+        depth = 0
+        for _walk in range(20):
+            candidates = [
+                child for child in children_by_parent.get(current_id, [])
+                if child['id'] not in seen and _is_continuation_session(rows.get(current_id), child)
+            ]
+            if not candidates:
+                return current_id if depth > 0 else None, depth
+            latest = max(candidates, key=lambda c: c.get('last_activity') or c.get('started_at') or 0)
+            seen.add(latest['id'])
+            current_id = latest['id']
+            depth += 1
+        return None, 0
+
+    for sid in wanted:
+        row = rows.get(sid)
+        if not row:
+            continue
+        entry = metadata.get(sid)
+        if entry is None:
+            continue
+        if entry.get('_lineage_tip_id'):
+            continue
+        tip_id, extra = _walk_continuation_tip(sid)
+        if tip_id and extra > 0:
+            entry['_lineage_tip_id'] = tip_id
+            existing_count = entry.get('_compression_segment_count') or 0
+            if isinstance(existing_count, int):
+                base_count = existing_count if existing_count > 0 else 1
+                entry['_compression_segment_count'] = base_count + extra
 
     return metadata

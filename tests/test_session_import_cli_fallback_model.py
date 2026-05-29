@@ -297,20 +297,39 @@ def test_merge_cli_sidebar_metadata_keeps_larger_sidecar_message_count():
 
 
 def test_webui_state_projection_dedupes_by_lineage_root():
-    """WebUI-origin state.db projections should not be additive non-WebUI rows."""
+    """WebUI-origin state.db projections that share a lineage root with a
+    represented sidecar should still be suppressed when their tip is already
+    represented by an existing sidecar (same session_id or same tip)."""
     import api.routes as routes
 
-    represented = {"root_sid"}
+    represented = {"root_sid", "tip_sid"}
     state_projection = {
-        "session_id": "tip_sid",
+        "session_id": "mid_segment",
         "source_tag": "webui",
         "raw_source": "webui",
         "session_source": "webui",
         "_lineage_root_id": "root_sid",
-        "_lineage_tip_id": "tip_sid",
     }
 
     assert routes._is_duplicate_webui_state_projection(state_projection, represented) is True
+
+
+def test_webui_state_tip_not_suppressed_when_tip_differs_from_sidecar():
+    """A WebUI-origin state.db tip must not be suppressed as a duplicate when
+    the lineage root overlaps but the tip is not represented by any sidecar."""
+    import api.routes as routes
+
+    represented = {"stale_sidecar", "root_sid"}
+    state_tip = {
+        "session_id": "fresh_tip",
+        "source_tag": "webui",
+        "raw_source": "webui",
+        "session_source": "webui",
+        "_lineage_root_id": "root_sid",
+        "_lineage_tip_id": "fresh_tip",
+    }
+
+    assert routes._is_duplicate_webui_state_projection(state_tip, represented) is False
 
 
 def test_external_state_projection_not_deduped_by_webui_source_guard():
@@ -331,7 +350,9 @@ def test_external_state_projection_not_deduped_by_webui_source_guard():
 
 
 def test_sessions_endpoint_suppresses_duplicate_webui_state_projection(monkeypatch):
-    """The /api/sessions merge should not add WebUI state.db lineage duplicates."""
+    """The /api/sessions merge should suppress WebUI state.db projections
+    when their tip is already represented by a WebUI sidecar, but should
+    NOT suppress a state.db tip when it is newer than the represented sidecar."""
     import api.profiles as profiles
     import api.routes as routes
 
@@ -351,17 +372,16 @@ def test_sessions_endpoint_suppresses_duplicate_webui_state_projection(monkeypat
         "_lineage_root_id": "root_sid",
         "_lineage_tip_id": "visible_tip",
     }
-    duplicate_webui_projection = {
-        "session_id": "state_projection_tip",
+    older_segment_projection = {
+        "session_id": "older_segment",
         "title": "Long Conversation",
         "profile": "default",
-        "updated_at": 30,
-        "last_message_at": 30,
+        "updated_at": 15,
+        "last_message_at": 15,
         "source_tag": "webui",
         "raw_source": "webui",
         "session_source": "webui",
         "_lineage_root_id": "root_sid",
-        "_lineage_tip_id": "state_projection_tip",
     }
     external_projection = {
         "session_id": "telegram_tip",
@@ -377,7 +397,7 @@ def test_sessions_endpoint_suppresses_duplicate_webui_state_projection(monkeypat
     }
 
     monkeypatch.setattr(routes, "all_sessions", lambda diag=None: [webui_row])
-    monkeypatch.setattr(routes, "get_cli_sessions", lambda: [duplicate_webui_projection, external_projection])
+    monkeypatch.setattr(routes, "get_cli_sessions", lambda: [older_segment_projection, external_projection])
 
     handler = _FakeHandler()
     routes.handle_get(handler, urlparse("http://example.com/api/sessions"))
@@ -385,7 +405,7 @@ def test_sessions_endpoint_suppresses_duplicate_webui_state_projection(monkeypat
     assert handler.status == 200
     session_ids = [row["session_id"] for row in handler.json_body()["sessions"]]
     assert "visible_tip" in session_ids
-    assert "state_projection_tip" not in session_ids
+    assert "older_segment" not in session_ids
     assert "telegram_tip" in session_ids
 
 

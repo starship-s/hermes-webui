@@ -2488,10 +2488,62 @@ def _is_duplicate_webui_state_projection(session: dict, represented_webui_ids: s
     useful metadata sidecars, but if any id in their compression lineage is
     already represented by WebUI session JSON, they should not be injected as an
     additive external row.
+
+    However, a WebUI-origin state.db row that is the lineage tip should NOT be
+    suppressed when the only represented sidecar is an older segment of the same
+    lineage. The tip carries newer content that the stale sidecar lacks, so
+    hiding it would make the sidebar navigate to a stale segment and lose turns.
     """
     if not _session_source_is_webui(session):
         return False
-    return bool(_session_lineage_ids(session) & represented_webui_ids)
+    lineage_ids = _session_lineage_ids(session)
+    if not (lineage_ids & represented_webui_ids):
+        return False
+    tip_id = session.get("_lineage_tip_id")
+    session_id = session.get("session_id")
+    if tip_id and tip_id == session_id and tip_id not in represented_webui_ids:
+        return False
+    return True
+
+
+def _promote_state_db_lineage_tips(
+    webui_sessions: list[dict],
+    state_db_rows: list[dict],
+) -> None:
+    """Enrich stale WebUI sidecars with the lineage tip from state.db projections.
+
+    When a compression chain has outgrown its WebUI sidecar JSON, the sidecar
+    row has no ``_lineage_tip_id`` and the sidebar navigates to an older
+    segment.  This in-place update copies ``_lineage_tip_id`` and segment
+    counts from state.db tips onto sidecars that share the same lineage root,
+    so the frontend can navigate to the latest continuation.
+    """
+    webui_by_root: dict[str, list[dict]] = {}
+    for s in webui_sessions:
+        root = s.get("_lineage_root_id")
+        if not root:
+            continue
+        if s.get("_lineage_tip_id"):
+            continue
+        webui_by_root.setdefault(root, []).append(s)
+
+    if not webui_by_root:
+        return
+
+    for row in state_db_rows:
+        if not _session_source_is_webui(row):
+            continue
+        tip_id = row.get("_lineage_tip_id")
+        if tip_id and tip_id == row.get("session_id"):
+            root = row.get("_lineage_root_id")
+            if root in webui_by_root:
+                for sidecar in webui_by_root[root]:
+                    sidecar.setdefault("_lineage_tip_id", tip_id)
+                    seg_count = row.get("_compression_segment_count")
+                    if isinstance(seg_count, int) and seg_count > 0:
+                        sidecar["_compression_segment_count"] = max(
+                            sidecar.get("_compression_segment_count") or 0, seg_count,
+                        )
 
 
 CLI_VISIBLE_SESSION_CAP = 20
@@ -4566,6 +4618,7 @@ def handle_get(handler, parsed) -> bool:
                     and is_cli_session_row_visible(s)
                     and not _cron_hide(s)
                 ]
+                _promote_state_db_lineage_tips(webui_sessions, deduped_cli)
             else:
                 diag.stage("filter_webui_sessions")
                 webui_sessions = [s for s in webui_sessions if not _is_cli_session_for_settings(s)]
