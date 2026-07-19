@@ -1,0 +1,154 @@
+[
+  {
+    "innerWidth": 1440,
+    "innerHeight": 900,
+    "devicePixelRatio": 1,
+    "bodyFont": "\"Lexend Deca\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", Inter, system-ui, sans-serif",
+    "proseFont": "\"Lexend Deca\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", Inter, system-ui, sans-serif",
+    "inlineCodeFont": "MonoLisa, ui-monospace, SFMono-Regular, \"SF Mono\", Menlo, Consolas, \"Liberation Mono\", monospace",
+    "fencedPreFont": "MonoLisa, ui-monospace, SFMono-Regular, \"SF Mono\", Menlo, Consolas, \"Liberation Mono\", monospace",
+    "fencedCodeFont": "MonoLisa, ui-monospace, SFMono-Regular, \"SF Mono\", Menlo, Consolas, \"Liberation Mono\", monospace",
+    "visibleText": "Show the typography contract with prose and code.\nJun 15, 9:06 AM\nH\nHermes\nTypography contract\n\nConversation prose stays readable while technical identifiers such as --font-mono remain distinct.\n\njavascript\nCopy\nconst greeting = \"Hello, typography\";\nconsole.log(greeting);\n\nEditing prose should keep the conversation face; source editors and terminals use the monospace face.\n\nJun 15, 9:06 AM\n\u2191\nto response",
+    "build": "baseline",
+    "mode": "default",
+    "viewport": "desktop",
+    "png": "baseline-default-desktop.png",
+    "pngSize": [
+      1440,
+      900
+    ]
+  },
+  {
+    "innerWidth": 1440,
+    "innerHeight": 900,
+    "devicePixelRatio": 1,
+    "bodyFont": "\"Trebuchet MS\", sans-serif",
+    "proseFont": "\"Trebuchet MS\", sans-serif",
+    "inlineCodeFont": "\"Courier New\", monospace",
+    "fencedPreFont": "\"Courier New\", monospace",
+    "fencedCodeFont": "\"Courier New\", monospace",
+    "visibleText": "Show the typography contract with prose and code.\nJun 15, 9:06 AM\nH\nHermes\nTypography contract\n\nConversation prose stays readable while technical identifiers such as --font-mono remain distinct.\n\njavascript\nCopy\nconst greeting = \"Hello, typography\";\nconsole.log(greeting);\n\nEditing prose should keep the conversation face; source editors and terminals use the monospace face.\n\nJun 15, 9:06 AM\n\u2191\nto response",
+    "build": "baseline",
+    "mode": "custom",
+    "viewport": "desktop",
+    "png": "baseline-custom-desktop.png",
+    "pngSize": [
+      1440,
+      900
+    ]
+  },
+  {
+    "innerWidth": 1440,
+    "innerHeight": 900,
+    "devicePixelRatio": 1,
+    "bodyFont": "\"Lexend Deca\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", Inter, system-ui, sans-serif",
+    "proseFont": "\"Lexend Deca\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", Inter, system-ui, sans-serif",
+    "inlineCodeFont": "MonoLisa, ui-monospace, SFMono-Regular, \"SF Mono\", Menlo, Consolas, \"Liberation Mono\", monospace",
+    "fencedPreFont": "MonoLisa, ui-monospace, SFMono-Regular, \"SF Mono\", Menlo, Consolas, \"Liberation Mono\", monospace",
+    "fencedCodeFont": "MonoLisa, ui-monospace, SFMono-Regular, \"SF Mono\", Menlo, Consolas, \"Liberation Mono\", monospace",
+    "visibleText": "Show the typography contract with prose and code.\nJun 15, 9:06 AM\nH\nHermes\nTypography contract\n\nConversation prose stays readable while technical identifiers such as --font-mono remain distinct.\n\njavascript\nCopy\nconst greeting = \"Hello, typography\";\nconsole.log(greeting);\n\nEditing prose should keep the conversation face; source editors and terminals use the monospace face.\n\nJun 15, 9:06 AM\n\u2191\nto response",
+    "build": "patched",
+    "mode": "default",
+    "viewport": "desktop",
+    "png": "patched-default-desktop.png",
+    "pngSize": [
+      1440,
+      900
+    ]
+  },
+  {
+    "innerWidth": 1440,
+    "innerHeight": 900,
+    "devicePixelRatio": 1,
+    "bodyFont": "\"Trebuchet MS\", sans-serif",
+    "proseFont": "Georgia, serif",
+    "inlineCodeFont": "\"Courier New\", monospace",
+    "fencedPreFont": "\"Courier New\", monospace",
+    "fencedCodeFont": "\"Courier New\", monospace",
+    "visibleText": "Show the typography contract with prose and code.\nJun 15, 9:06 AM\nH\nHermes\nTypography contract\n\nConversation prose stays readable while technical identifiers such as --font-mono remain distinct.\n\njavascript\nCopy\nconst greeting = \"Hello, typography\";\nconsole.log(greeting);\n\nEditing prose should keep the conversation face; source editors and terminals use the monospace face.\n\nJun 15, 9:06 AM\n\u2191\nto response",
+    "build": "patched",
+    "mode": "custom",
+    "viewport": "desktop",
+    "png": "patched-custom-desktop.png",
+    "pngSize": [
+      1440,
+      900
+    ]
+  },
+  {
+    "innerWidth": 390,
+    "innerHeight": 844,
+    "devicePixelRatio": 1,
+    "bodyFont": "\"Lexend Deca\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", Inter, system-ui, sans-serif",
+    "proseFont": "\"Lexend Deca\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", Inter, system-ui, sans-serif",
+    "inlineCodeFont": "MonoLisa, ui-monospace, SFMono-Regular, \"SF Mono\", Menlo, Consolas, \"Liberation Mono\", monospace",
+    "fencedPreFont": "MonoLisa, ui-monospace, SFMono-Regular, \"SF Mono\", Menlo, Consolas, \"Liberation Mono\", monospace",
+    "fencedCodeFont": "MonoLisa, ui-monospace, SFMono-Regular, \"SF Mono\", Menlo, Consolas, \"Liberation Mono\", monospace",
+    "visibleText": "Show the typography contract with prose and code.\nJun 15, 9:06 AM\nH\nHermes\nTypography contract\n\nConversation prose stays readable while technical identifiers such as --font-mono remain distinct.\n\njavascript\nCopy\nconst greeting = \"Hello, typography\";\nconsole.log(greeting);\n\nEditing prose should keep the conversation face; source editors and terminals use the monospace face.\n\nJun 15, 9:06 AM\n\u2191",
+    "build": "baseline",
+    "mode": "default",
+    "viewport": "mobile",
+    "png": "baseline-default-mobile.png",
+    "pngSize": [
+      390,
+      844
+    ]
+  },
+  {
+    "innerWidth": 390,
+    "innerHeight": 844,
+    "devicePixelRatio": 1,
+    "bodyFont": "\"Trebuchet MS\", sans-serif",
+    "proseFont": "\"Trebuchet MS\", sans-serif",
+    "inlineCodeFont": "\"Courier New\", monospace",
+    "fencedPreFont": "\"Courier New\", monospace",
+    "fencedCodeFont": "\"Courier New\", monospace",
+    "visibleText": "Show the typography contract with prose and code.\nJun 15, 9:06 AM\nH\nHermes\nTypography contract\n\nConversation prose stays readable while technical identifiers such as --font-mono remain distinct.\n\njavascript\nCopy\nconst greeting = \"Hello, typography\";\nconsole.log(greeting);\n\nEditing prose should keep the conversation face; source editors and terminals use the monospace face.\n\nJun 15, 9:06 AM\n\u2191",
+    "build": "baseline",
+    "mode": "custom",
+    "viewport": "mobile",
+    "png": "baseline-custom-mobile.png",
+    "pngSize": [
+      390,
+      844
+    ]
+  },
+  {
+    "innerWidth": 390,
+    "innerHeight": 844,
+    "devicePixelRatio": 1,
+    "bodyFont": "\"Lexend Deca\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", Inter, system-ui, sans-serif",
+    "proseFont": "\"Lexend Deca\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", Inter, system-ui, sans-serif",
+    "inlineCodeFont": "MonoLisa, ui-monospace, SFMono-Regular, \"SF Mono\", Menlo, Consolas, \"Liberation Mono\", monospace",
+    "fencedPreFont": "MonoLisa, ui-monospace, SFMono-Regular, \"SF Mono\", Menlo, Consolas, \"Liberation Mono\", monospace",
+    "fencedCodeFont": "MonoLisa, ui-monospace, SFMono-Regular, \"SF Mono\", Menlo, Consolas, \"Liberation Mono\", monospace",
+    "visibleText": "Show the typography contract with prose and code.\nJun 15, 9:06 AM\nH\nHermes\nTypography contract\n\nConversation prose stays readable while technical identifiers such as --font-mono remain distinct.\n\njavascript\nCopy\nconst greeting = \"Hello, typography\";\nconsole.log(greeting);\n\nEditing prose should keep the conversation face; source editors and terminals use the monospace face.\n\nJun 15, 9:06 AM\n\u2191",
+    "build": "patched",
+    "mode": "default",
+    "viewport": "mobile",
+    "png": "patched-default-mobile.png",
+    "pngSize": [
+      390,
+      844
+    ]
+  },
+  {
+    "innerWidth": 390,
+    "innerHeight": 844,
+    "devicePixelRatio": 1,
+    "bodyFont": "\"Trebuchet MS\", sans-serif",
+    "proseFont": "Georgia, serif",
+    "inlineCodeFont": "\"Courier New\", monospace",
+    "fencedPreFont": "\"Courier New\", monospace",
+    "fencedCodeFont": "\"Courier New\", monospace",
+    "visibleText": "Show the typography contract with prose and code.\nJun 15, 9:06 AM\nH\nHermes\nTypography contract\n\nConversation prose stays readable while technical identifiers such as --font-mono remain distinct.\n\njavascript\nCopy\nconst greeting = \"Hello, typography\";\nconsole.log(greeting);\n\nEditing prose should keep the conversation face; source editors and terminals use the monospace face.\n\nJun 15, 9:06 AM\n\u2191",
+    "build": "patched",
+    "mode": "custom",
+    "viewport": "mobile",
+    "png": "patched-custom-mobile.png",
+    "pngSize": [
+      390,
+      844
+    ]
+  }
+]
