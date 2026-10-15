@@ -88,9 +88,16 @@ vm.runInContext(HELPERS + '\n' + PREFIX + '\nreached.push(sid);\n}', context);
     assert state["reached"] == ([] if superseded else ["target"])
     assert state["loading"] == ("newest" if superseded else "target")
     assert len(state["warnings"]) == 1
-    assert state["posts"] == [{"session_id": "old", "text": "captured draft",
-                               "files": [{"name": "fixture.txt", "path": "/fixture.txt",
-                                          "size": None, "type": ""}]}]
+    assert state["posts"][0] == {"session_id": "old", "text": "captured draft",
+                                 "files": [{"name": "fixture.txt", "path": "/fixture.txt",
+                                            "size": None, "type": ""}]}
+    if not superseded:
+        assert state["posts"][1] == {"session_id": "old", "text": "typed later",
+                                     "files": [{"name": "fixture.txt", "path": "/fixture.txt",
+                                                "size": None, "type": ""},
+                                               {"name": "later.txt", "path": "", "size": None, "type": ""}]}
+    else:
+        assert len(state["posts"]) == 1
     assert state["known"] == ["old"]
     assert state["visible"] == "typed later"
     assert state["draft"] == ({"text": "newest input"} if superseded else {

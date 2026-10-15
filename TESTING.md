@@ -15,6 +15,49 @@
 
 ---
 
+## Composer draft sidecar and failed-save recovery
+
+Use a disposable home/state directory and synthetic sessions. Never inject save
+failures against production conversations. The normal persistence authority is
+still the server's atomic draft sidecar, not the browser recovery copy.
+
+1. Open a long conversation, type a draft, switch away and return. The text
+   should return without rewriting the session history JSON.
+2. Make only draft POSTs fail (for example, a fixture returning 404 or 503), type
+   new text and switch to a second conversation. Navigation should finish without
+   leaking the departing input into the destination. Return to the first chat.
+   Its pending text should win over an older or missing server draft.
+3. Refresh that same tab while the save still fails. The pending text should
+   recover. Recovery keys are isolated by profile and session ID in same-origin
+   `sessionStorage`, not shared across tabs or synced to other devices. Closing
+   the tab is not a recovery guarantee. If storage is denied or full, a notice
+   warns that recovery is memory-only and refreshing is unsafe until saved.
+4. Restore the endpoint and save. The acknowledged pending version should be
+   removed, but an older response must not remove a newer pending version.
+   Clear/send the draft and return again. Sent input must not reappear from the
+   recovery copy. Also test typing more while the pre-switch save is pending.
+5. Repeat with another profile using the same synthetic session ID. Neither
+   pending input nor an in-flight response may modify that profile's composer.
+6. In-tab recovery retains staged files. After refresh it can restore uploaded
+   attachment paths only, not raw browser `File` bytes. A notice asks the user
+   to select unuploaded attachments again rather than pretending they survived.
+7. For an archived pre-compression parent whose continuation is missing, belongs
+   to another profile, or has an unconfirmed parent link, a draft POST must reject
+   with `draft_authority_unconfirmed` and the original requested `session_id`.
+   This is not a `session_moved` redirect and must not trigger a child retry.
+
+Focused automated coverage:
+
+```bash
+./scripts/test.sh tests/test_composer_draft_completion.py \
+  tests/test_composer_draft_recovery.py \
+  tests/test_composer_draft_sidecar_regressions.py \
+  tests/test_composer_draft_after_send.py
+```
+
+The Node helper tests exercise shipped code with DOM/transport seams. They do
+not replace the real HTTP/browser procedure above or a real provider send.
+
 ## Static JS runtime lint (brick-class regression guard)
 
 Some JS bugs throw a `TypeError`/`ReferenceError` only when a specific function
