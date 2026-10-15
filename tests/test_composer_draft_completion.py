@@ -104,6 +104,38 @@ vm.runInContext(HELPERS + '\n' + PREFIX + '\nreached.push(sid);\n}', context);
         "text": "captured draft", "files": [{"name": "fixture.txt", "path": "/fixture.txt"}]})
 
 
+@pytest.mark.parametrize('same_session', [False, True])
+def test_accepted_navigation_scopes_pending_files_to_destination(same_session):
+    node = shutil.which('node')
+    if not node:
+        pytest.skip('node not available')
+    source = (ROOT / 'static/sessions.js').read_text(encoding='utf-8')
+    start = source.index('const continuationSid=', source.index('async function loadSession('))
+    end = source.index("  if(typeof populateModelDropdown", start)
+    acceptance = source[start:end]
+    script = '''
+const vm=require('node:vm');
+const attachment={name:'old attachment',arrayBuffer(){return new ArrayBuffer(16)}};
+const S={session:{session_id:'old'},pendingFiles:[attachment]};
+let rendered=0;
+const ctx=vm.createContext({S,renderTray(){rendered++}});
+vm.runInContext('async function accept(data,sid,currentSid,opts={}){'+ACCEPTANCE+'}',ctx);
+(async()=>{
+ctx.data={session:{session_id:SAME ? 'old':'target'}};
+await vm.runInContext('accept(data,data.session.session_id,"old")',ctx);
+process.stdout.write(JSON.stringify({files:S.pendingFiles.length,sameFile:S.pendingFiles[0]===attachment,rendered}));
+})().catch(e=>{console.error(e);process.exitCode=1});
+'''
+    result = subprocess.run([node, '-e', 'const ACCEPTANCE='+json.dumps(acceptance)
+                            +';const SAME='+json.dumps(same_session)+';'+script],
+                            capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0, result.stderr
+    output = json.loads(result.stdout)
+    assert output['files'] == (1 if same_session else 0)
+    assert output['sameFile'] is same_session
+    assert output['rendered'] == (0 if same_session else 1)
+
+
 @pytest.mark.parametrize("invalid", ["parent", "profile", "missing"])
 def test_rejected_continuation_cannot_redirect_stale_autosave(tmp_path, monkeypatch, invalid):
     models, routes, directory, old_sid, child_sid, _ = _build_pre_compression_migration_state(

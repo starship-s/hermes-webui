@@ -2136,6 +2136,13 @@ async function loadSession(sid){
     return loadSession(continuationSid,{...opts,skipLineageResolve:true,skipContinuationResolve:true,force:true,_preloadNotified:true});
   }
   S.session=data.session;
+  // The departing draft owns its File objects in tab-local recovery. Do not
+  // carry that attachment tray into the newly accepted destination session.
+  // A same-session refresh, or a failed/stale load above, retains live input.
+  if (currentSid !== sid) {
+    S.pendingFiles = [];
+    if (typeof renderTray === 'function') renderTray();
+  }
   if(typeof _clearEmptyComposerModelOverride==='function') _clearEmptyComposerModelOverride();
   // Loading a real existing session abandons any pre-session toolset override
   // staged on the empty composer before any deferred refresh work runs.
