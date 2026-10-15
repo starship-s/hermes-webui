@@ -14818,9 +14818,9 @@ def handle_post(handler, parsed) -> bool:
                             handler,
                             {
                                 "ok": False,
-                                "error": "Session moved",
+                                "error": "Draft authority could not be confirmed",
                                 "session_id": request_sid,
-                                "code": "session_moved",
+                                "code": "draft_authority_unconfirmed",
                             },
                             status=409,
                         )
@@ -14832,9 +14832,9 @@ def handle_post(handler, parsed) -> bool:
                                         handler,
                                         {
                                             "ok": False,
-                                            "error": "Session moved",
-                                            "session_id": resolved_sid,
-                                            "code": "session_moved",
+                                            "error": "Draft authority could not be confirmed",
+                                            "session_id": request_sid,
+                                            "code": "draft_authority_unconfirmed",
                                         },
                                         status=409,
                                     )
@@ -14860,9 +14860,9 @@ def handle_post(handler, parsed) -> bool:
                         handler,
                         {
                             "ok": False,
-                            "error": "Session moved",
-                            "session_id": authoritative_sid,
-                            "code": "session_moved",
+                            "error": "Draft authority could not be confirmed",
+                            "session_id": request_sid,
+                            "code": "draft_authority_unconfirmed",
                         },
                         status=409,
                     )
@@ -14871,9 +14871,9 @@ def handle_post(handler, parsed) -> bool:
                         handler,
                         {
                             "ok": False,
-                            "error": "Session moved",
-                            "session_id": authoritative_sid,
-                            "code": "session_moved",
+                            "error": "Draft authority could not be confirmed",
+                            "session_id": request_sid,
+                            "code": "draft_authority_unconfirmed",
                         },
                         status=409,
                     )
@@ -14884,9 +14884,9 @@ def handle_post(handler, parsed) -> bool:
                             handler,
                             {
                                 "ok": False,
-                                "error": "Session moved",
-                                "session_id": resolved_sid,
-                                "code": "session_moved",
+                                "error": "Draft authority could not be confirmed",
+                                "session_id": request_sid,
+                                "code": "draft_authority_unconfirmed",
                             },
                             status=409,
                         )
@@ -14908,9 +14908,9 @@ def handle_post(handler, parsed) -> bool:
                             handler,
                             {
                                 "ok": False,
-                                "error": "Session moved",
-                                "session_id": continuation_sid or authoritative_sid,
-                                "code": "session_moved",
+                                "error": "Draft authority could not be confirmed",
+                                "session_id": request_sid,
+                                "code": "draft_authority_unconfirmed",
                             },
                             status=409,
                         )
@@ -14985,9 +14985,9 @@ def handle_post(handler, parsed) -> bool:
                 handler,
                 {
                     "ok": False,
-                    "error": "Session moved",
-                    "session_id": authoritative_sid,
-                    "code": "session_moved",
+                    "error": "Draft authority could not be confirmed",
+                    "session_id": request_sid,
+                    "code": "draft_authority_unconfirmed",
                 },
                 status=409,
             )

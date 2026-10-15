@@ -1819,7 +1819,15 @@ async function loadSession(sid){
   if (currentSid && currentSid !== sid) {
     if(typeof window._clearPendingSelections==='function') window._clearPendingSelections();
     if(typeof _clearQueueCardDisplay==='function') _clearQueueCardDisplay(currentSid);
-    await _saveComposerDraftNow(currentSid, ($('msg') || {}).value || '', S.pendingFiles ? [...S.pendingFiles] : []);
+    const draftText = ($('msg') || {}).value || '';
+    const draftFiles = S.pendingFiles ? [...S.pendingFiles] : [];
+    try {
+      await _saveComposerDraftNow(currentSid, draftText, draftFiles);
+    } catch (error) {
+      // A failed save must not strand navigation after the old SSE was stopped.
+      // Keep the exact pre-await draft, without touching another session's input.
+      _handleComposerDraftPostFailure(error, currentSid, draftText, draftFiles);
+    }
     // The awaited draft save above yields the event loop. If another
     // loadSession() started for a different session while we were waiting
     // (rapid switch B→C), _loadingSessionId now points at that newer load —

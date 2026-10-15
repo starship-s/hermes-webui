@@ -507,9 +507,9 @@ def test_draft_post_for_stale_pre_compression_snapshot_profile_mismatch_rejected
 
         assert status == 409
         assert payload["ok"] is False
-        assert payload["error"] == "Session moved"
-        assert payload["code"] == "session_moved"
-        assert payload["session_id"] == continuation_sid
+        assert payload["error"] == "Draft authority could not be confirmed"
+        assert payload["code"] == "draft_authority_unconfirmed"
+        assert payload["session_id"] == old_sid
         assert not (session_dir / ".drafts" / f"{old_sid}.json").exists()
         assert not (session_dir / ".drafts" / f"{continuation_sid}.json").exists()
     finally:
@@ -617,8 +617,8 @@ def test_draft_post_for_stale_pre_compression_snapshot_cycles_rejected(tmp_path,
 
         assert status == 409
         assert payload["ok"] is False
-        assert payload["error"] == "Session moved"
-        assert payload["code"] == "session_moved"
+        assert payload["error"] == "Draft authority could not be confirmed"
+        assert payload["code"] == "draft_authority_unconfirmed"
         assert payload["session_id"] == old_sid
         assert not (session_dir / ".drafts" / f"{old_sid}.json").exists()
     finally:
@@ -1022,9 +1022,9 @@ def test_draft_post_for_stale_pre_compression_snapshot_hops_exhausted_rejected(t
 
         assert status == 409
         assert payload["ok"] is False
-        assert payload["error"] == "Session moved"
-        assert payload["code"] == "session_moved"
-        assert payload["session_id"] == chain_sid
+        assert payload["error"] == "Draft authority could not be confirmed"
+        assert payload["code"] == "draft_authority_unconfirmed"
+        assert payload["session_id"] == old_sid
         assert not (session_dir / ".drafts" / f"{old_sid}.json").exists()
     finally:
         with streaming.SESSION_AGENT_LOCKS_LOCK:
