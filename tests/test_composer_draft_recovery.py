@@ -145,6 +145,42 @@ output.warnings=warnings;
     assert 'refresh' in result['warnings'][0].lower()
 
 
+@pytest.mark.parametrize('debounced', [False, True])
+def test_in_tab_recovery_preserves_actual_unuploaded_file_bytes(debounced):
+    result = _run('''
+const attachment=new (require('node:buffer').File)(['attachment bytes'],'note.txt',{type:'text/plain'});
+p.ctx.attachment=attachment;
+''' + ('''p.run('_saveComposerDraft("old","with attachment",[attachment])');
+await new Promise(resolve=>setTimeout(resolve,500));
+''' if debounced else '''const pending=p.run('_saveComposerDraftNow("old","with attachment",[attachment])');
+pending.catch(()=>{});
+''') + '''p.calls[0].reject(new Error('offline'));
+await new Promise(resolve=>setTimeout(resolve,0));
+restore(p);
+output.sameFile=p.S.pendingFiles[0]===attachment;
+output.bytes=typeof p.S.pendingFiles[0]?.text==='function' ? await p.S.pendingFiles[0].text() : null;
+output.wire=JSON.parse(p.calls[0].opts.body).files;
+''')
+    assert result['sameFile'] is True
+    assert result['bytes'] == 'attachment bytes'
+    assert result['wire'][0]['name'] == 'note.txt'
+    assert 'localFiles' not in result['wire'][0]
+
+
+def test_reload_warns_for_unuploaded_attachment_instead_of_faking_file_bytes():
+    result = _run('''
+const pending=p.run('_saveComposerDraftNow("old","with attachment",[{name:"note.txt",size:16,type:"text/plain"}])');
+p.calls[0].reject(new Error('offline'));try{await pending}catch(e){}
+const refreshed=page();let warnings=[];refreshed.ctx.showToast=message=>warnings.push(message);
+output.restored=restore(refreshed);
+output.files=refreshed.S.pendingFiles;
+output.warnings=warnings;
+''')
+    assert result['restored'] == 'with attachment'
+    assert result['files'] == []
+    assert any('attachments' in message for message in result['warnings'])
+
+
 @pytest.mark.parametrize('outcome', ['success', 'failure', 'clear'])
 def test_request_completion_cannot_mutate_same_sid_in_a_different_profile(outcome):
     result = _run('''

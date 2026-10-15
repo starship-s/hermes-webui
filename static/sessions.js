@@ -266,7 +266,8 @@ function _saveComposerDraft(sid, text, files) {
   clearTimeout(_draftSaveTimer);
   const normalizedText = String(text || '');
   const normalizedFiles = _composerDraftFilesForPersist(files);
-  const normalizedDraft = { text: normalizedText, files: normalizedFiles };
+  const normalizedDraft = { text: normalizedText, files: normalizedFiles,
+    localFiles: Array.isArray(files) ? [...files] : [] };
   if (_composerDraftHasPayload(normalizedText, normalizedFiles)) {
     _clearComposerDraftRestoreSuppression(sid);
     _composerDraftKnownPayloadSessions.add(sid);
@@ -334,7 +335,8 @@ function _postComposerDraftPayload(sid, draft) {
   const normalizedText = String((draft && draft.text) || '');
   const normalizedFiles = Array.isArray(draft && draft.files) ? draft.files.filter(Boolean) : [];
   const bodyPayload = { text: normalizedText, files: normalizedFiles };
-  const attempt = _stageComposerDraftRecovery(requestSid, normalizedText, normalizedFiles);
+  const attempt = _stageComposerDraftRecovery(requestSid, normalizedText,
+    Array.isArray(draft && draft.localFiles) ? draft.localFiles : normalizedFiles);
   const post = (targetSid) => api('/api/session/draft', {
     method: 'POST',
     body: JSON.stringify({
@@ -405,7 +407,8 @@ function _saveComposerDraftNow(sid, text, files) {
   clearTimeout(_draftSaveTimer);
   const normalizedText = String(text || '');
   const normalizedFiles = _composerDraftFilesForPersist(files);
-  const normalizedDraft = { text: normalizedText, files: normalizedFiles };
+  const normalizedDraft = { text: normalizedText, files: normalizedFiles,
+    localFiles: Array.isArray(files) ? [...files] : [] };
   if (_composerDraftHasPayload(normalizedText, normalizedFiles)) {
     _clearComposerDraftRestoreSuppression(sid);
   }
